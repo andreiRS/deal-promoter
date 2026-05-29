@@ -77,4 +77,15 @@ Cross-cutting integration code (Keepa client, Amazon Creators client, WAHA clien
 - **Post text template.** Exact fields in each plain-text post (title, old-to-new price, percent off, affiliate disclosure line). The affiliate disclosure is also a legal/ToS research item.
 - **Overflow handling.** When a cycle qualifies more deals than the per-cycle cap, whether to carry the remainder to the next cycle (dedup covers it) or drop them. Leaning carry.
 - **WAHA reliability and ban risk.** Session-drop frequency, channel message-rate limits, ban-risk mitigation, and whether WAHA Core suffices or WAHA Plus is needed. This is the single most fragile dependency.
-- **Research backlog (to resolve before or during build):** Keepa token economics and refresh interval and exact deal-object fields; `offersV2.listings.dealDetails` and `merchantInfo` schemas; Creators API rate limits and whether `detailPageURL` tag/linkCode supports per-channel sub-tags; a DE browse-node to commission-rate table (rates are not exposed by the API); conversion/earnings attribution strategy via Associates reporting and tracking IDs; whether a plain Amazon link renders a preview card in a WhatsApp channel; Amazon Associates disclosure requirements and Keepa/WhatsApp ToS exposure.
+
+## Research Backlog
+
+To resolve before or during build:
+
+- Keepa token economics and refresh interval, and exact deal-object fields.
+- `offersV2.listings.dealDetails` and `merchantInfo` schemas.
+- Creators API rate limits and whether `detailPageURL` tag/linkCode supports per-channel sub-tags.
+- A DE browse-node to commission-rate table (rates are not exposed by the API).
+- Conversion/earnings attribution strategy via Associates reporting and tracking IDs.
+- ~~Whether a plain Amazon link renders a preview card in a WhatsApp channel.~~ **Confirmed working** — a plain Amazon link renders a preview card in a WhatsApp channel.
+- Amazon Associates disclosure requirements and Keepa/WhatsApp ToS exposure.
