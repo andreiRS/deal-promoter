@@ -1,0 +1,11 @@
+# secrets
+.env
+.env.local
+
+# bun / node
+node_modules/
+bun.lockb
+
+# experiment output dumps (raw API responses we capture for inspection)
+**/out/
+*.dump.json

@@ -8,6 +8,13 @@ validate against Amazon Creators API, publish affiliate links to WhatsApp).
 > scrape, so several figures below come from the official Java backend repo, the community
 > Python wrapper docs, and third-party guides. Anything marked CONFIRM should be verified on
 > the live API page once we have an account, because token costs and prices change.
+>
+> **Live-verified (2026-05-30):** items marked **[VERIFIED]** were confirmed against the live
+> amazon.de API by the throwaway probes in [`../../experiments/`](../../experiments/). See
+> [`experiments/01-key-and-tokens/FINDINGS.md`](../../experiments/01-key-and-tokens/FINDINGS.md)
+> (token meter) and [`experiments/02-deals/FINDINGS.md`](../../experiments/02-deals/FINDINGS.md)
+> (deals request + Deal Object). Where the live API disagreed with the docs, the brief now
+> reflects the live behaviour and links the finding.
 
 ## 1. What Keepa is
 
@@ -37,17 +44,25 @@ validate against Amazon Creators API, publish affiliate links to WhatsApp).
     your subscription tier (e.g. a 20-tokens/min plan refills 20 per minute). **Tokens
     expire 60 minutes after they are generated**, so an unused balance does not accumulate
     indefinitely; you cannot "save up" for a big burst beyond one hour of refill.
+    **[VERIFIED]** our test key is the 20/min tier: live `/token` reported
+    `refillRate: 20`, `tokensLeft: 1200`, so the **balance cap is ~1200** (refillRate × 60),
+    consistent with the 60-minute expiry.
   - The official rule of thumb: **1 token retrieves the complete data set for 1 product.**
     So a plain /product lookup is about 1 token per ASIN.
   - Asking for `offers` / extra data on /product is much more expensive (each offers page
     adds several tokens). Avoid `offers` unless we truly need live marketplace offers.
-  - A deals call is a small fixed cost per page and returns up to 150 deals, so it is very
-    cheap per-deal. This is exactly why our "deals first, /product only for survivors"
-    design is the right shape.
+  - **[VERIFIED]** A deals call costs a **flat 5 tokens per page** (not "~1/page" — an earlier
+    draft underestimated this), and returns **up to 150 deals per page** regardless, so it is
+    still very cheap per-deal (~0.03 tokens/deal on a full page). This is exactly why our
+    "deals first, /product only for survivors" design is the right shape. A query can page up
+    to 10,000 ASINs. See `experiments/02-deals/FINDINGS.md`.
   - The API response carries the live balance and refill info (tokensLeft, refillIn,
     refillRate); the Python wrapper surfaces these (`tokens_left`, `time_to_refill`) and the
-    Java framework exposes the same. Read them on every call to self-throttle. Checking the
-    key/balance on init is free (costs no tokens).
+    Java framework exposes the same. Read them on every call to self-throttle. **[VERIFIED]**
+    Checking the key/balance via `GET /token` is **free** (`tokensConsumed: 0`). The meter
+    body also carries two fields not in the docs: **`tokenFlowReduction`** (0 when healthy —
+    presumed throttle/penalty indicator that rises under over-requesting; watch it) and
+    `processingTimeInMs`. See `experiments/01-key-and-tokens/FINDINGS.md`.
 - Pricing tiers (priced by token throughput; figures corroborated across third-party guides,
   CONFIRM on the live page since they drift):
   - 20 tokens/min  ~ €49/month  (entry API tier)
@@ -64,22 +79,63 @@ validate against Amazon Creators API, publish affiliate links to WhatsApp).
 ## 3. Parts of the API essential for us
 
 ### Deals / browsing-deals endpoint (our primary funnel)
-- Returns up to **150 deals per page** for a given marketplace, filtered by a deal-query
-  object. Paginate with `page`. Cheap in tokens, so this is our cheap wide net.
-- Filter parameters available (from the wrapper's `deals` / DealQuery), include:
+- **[VERIFIED]** `GET /deal?key=…&selection=<urlEncodedJSON>` (or POST with the JSON as the
+  body for large queries). Returns up to **150 deals per page** for a given marketplace,
+  filtered by the `selection` deal-query object. Paginate with `page` (start 0, stop when a
+  page returns < 150; cap 10,000 ASINs). **Flat 5 tokens/page.** `domainId` and exactly one
+  entry in `priceTypes` are **required** (multiple price types per query are not supported).
+- **Only products updated in the last 12 hours appear in deals.** `dateRange` selects the
+  change window: 0 = day (24h), 1 = week (7d), 2 = month (31d), 3 = 90 days.
+- Filter parameters (the live `selection` object has ~70 keys; the ones we care about):
   - `domainId` (marketplace, see below; **3 = Germany/amazon.de** for us)
-  - `priceTypes` (which price to evaluate: Amazon, New, Used, Buy Box, etc.)
+  - `priceTypes` (single-element array: 0=Amazon, 1=New, 2=Used, 10=New_FBA, 18=Buy Box,
+    8=Lightning, 9=Warehouse, 33=Prime-exclusive, … — same index space as `csv`)
   - `deltaRange`, `deltaPercentRange`, `deltaLastRange` (size of the drop, absolute /
-    percent / vs last value) -> this is how we set "only big drops"
-  - `currentRange` (current price window), `salesRankRange` (popularity window)
-  - `includeCategories`, `excludeCategories`
-  - `minRating`, `hasReviews`
-  - `isLowest`, `isLowestOffer`, `isOutOfStock`, `isRangeEnabled`, `isFilterEnabled`
-  - `titleSearch`, `filterErotic`
-  - `sortType`, `dateRange` (recency window of the deal)
+    percent / vs last value) -> this is how we set "only big drops". `deltaPercentRange`
+    minimum is 10% (80% for Sales Rank).
+  - `currentRange` (current price window, in cents), `salesRankRange` (popularity window;
+    **using it excludes products with no sales rank**; `-1` as upper bound = open)
+  - `includeCategories`, `excludeCategories` (up to 500 node IDs)
+  - `minRating` (0..50, -1 = off), `hasReviews`
+  - `isLowest`, `isLowest90`, `isLowestOffer`, `isHighest`, `isOutOfStock`, `isBackInStock`,
+    `isRisers`, `isPrimeExclusive`, `mustHaveAmazonOffer`, `singleVariation`
+  - `isRangeEnabled` / `isFilterEnabled` (master switches for the range / filter blocks)
+  - `titleSearch` (space-separated keywords, all must match), `filterErotic`
+  - `sortType` (1=deal age newest, 2=absolute delta, 3=sales rank, 4=percent delta; negate
+    to invert except 1), `dateRange` (change window, above)
 - Practical use: set domainId=3, a price type, a deltaPercentRange threshold, sales-rank and
   rating floors, and exclude junk categories, then page through. Survivors get a /product
   deep lookup.
+
+#### Response shape **[VERIFIED]**
+- Envelope: `{ deals: { dr, categoryIds, categoryNames, categoryCount, drDateIndex } }` plus
+  the usual token-meter fields and a top-level **`dealsCached`** boolean (both undocumented).
+  `dr` is the deal array; `categoryIds/Names/Count` are index-aligned root-category rollups.
+- Each **Deal Object** carries `current` (Price-Type-indexed, like `csv`), and the 2D arrays
+  `delta` / `deltaPercent` / `avg` indexed **`[dateRange][priceType]`** (the day index 0 of
+  `avg` is actually a 48h average). Plus `asin`, `parentAsin` (only on variation children),
+  `title`, `rootCat`, `categories`, `image`, `currentSince`, `creationDate`, `lastUpdate`,
+  `lightningEnd`, `warehouseCondition`.
+- **Fields present live but not in the docs:** `salesRankDrops30/90/180/365` (sales-rank drop
+  counts per window — a useful demand signal for ranking deals), `dateIntervalIndex`,
+  `backInStock`, `lightningStart`. Model these in the PHP Deal struct.
+- **`image`** is an array of US-ASCII char codes for the filename only
+  (e.g. → `61k3Lay7JUL.jpg`); full URL `https://images-na.ssl-images-amazon.com/images/I/<name>`.
+- **Sentinels differ between arrays** (centralize in the decoder): `current` uses **`-1`** for
+  "no offer / OOS"; `avg` and empty slots of `delta` use **`-2`** for "no data"; `delta` uses
+  **`0`** for "no change / not calculable". Rule that works everywhere: treat any value `< 0`
+  as absent, and for `delta` also ignore `0`.
+
+#### Two landmines for the production funnel **[VERIFIED]**
+- **`sortType=4` (percent delta) floats data-glitch deals to the top.** A €6.99 cable showed a
+  €543 "weighted average" → 99% "drop"; the math is internally consistent (`avg − current =
+  delta`), so Keepa's average is polluted by transient price spikes, not a decode bug. Ranking
+  on `deltaPercent` alone surfaces junk — add glitch guards (sanity-bound `currentRange`/`avg`,
+  prefer `sortType=2` absolute delta, and/or combine with `salesRankDrops*`).
+- **JS Long-precision:** the "unknown root category" sentinel `9223372036854775807`
+  (Long.MAX_VALUE) corrupts under JS `JSON.parse` (→ `…776000`); PHP 64-bit ints are fine.
+  Real node IDs seen are all < 2^53 and safe. Treat that sentinel (or `rootCat` 0) as
+  "unknown root category". Relevant only if any tooling round-trips deals through JS.
 
 ### /product endpoint (per-ASIN deep history)
 - Query one or many ASINs; returns the full product object with delta-encoded history arrays.
@@ -121,7 +177,8 @@ validate against Amazon Creators API, publish affiliate links to WhatsApp).
   (the Request Best Sellers parameter table):
   1=US (com), 2=UK (co.uk), **3=DE (amazon.de)**, 4=FR, 5=JP (co.jp), 6=CA, 8=IT, 9=ES,
   10=IN, 11=MX (com.mx). Brazil is not applicable to the Best Sellers request. We use **3**
-  for the Germany-first launch.
+  for the Germany-first launch. **[VERIFIED]** `domainId: 3` returned German-language
+  amazon.de deals (titles, € prices).
 - Correction: an earlier draft of this file said 2 = DE. That was wrong; **2 is the UK** and
   **3 is Germany**. Any code or notes that used domainId 2 for amazon.de must use 3.
 
@@ -130,12 +187,15 @@ validate against Amazon Creators API, publish affiliate links to WhatsApp).
   `CsvType` table (AMAZON, NEW, USED, SALES rank, LISTPRICE, NEW_FBA, BUY_BOX_SHIPPING,
   COUNT_NEW, RATING, COUNT_REVIEWS, etc.; ~30+ types). Each entry is a flat
   `[time, value, time, value, ...]` series (time-keyed, not fixed-interval; gaps are normal).
-- **Keepa Time**: timestamps are "Keepa minutes" = Unix-epoch-minutes minus a fixed offset
-  of **21564000**. Convert to real time with `(keepaMinutes + 21564000) * 60000` ms; the
-  Java framework wraps this as `KeepaTime.nowMinutes()` / conversion helpers. This epoch
-  offset is the single most common stumbling block; budget for a small tested helper.
+- **Keepa Time** **[VERIFIED]**: timestamps are "Keepa minutes" = Unix-epoch-minutes minus a
+  fixed offset of **21564000**. Convert to real time with `(keepaMinutes + 21564000) * 60000`
+  ms; the Java framework wraps this as `KeepaTime.nowMinutes()` / conversion helpers. This
+  epoch offset is the single most common stumbling block; budget for a small tested helper.
+  Confirmed decoding live deal `lastUpdate`/`currentSince`/`creationDate` to sane timestamps.
 - Prices are integers in the marketplace's minor unit (euro cents for amazon.de). A value of
   **-1 means "no data / out of stock"** and must be filtered, not treated as a 0 price.
+  **[VERIFIED]** on deals — but note the sentinel differs by array (deals `avg`/`delta` use
+  `-2`/`0`, see the Deals section); confirm per-field when decoding `/product` `csv` too.
 - RATING is an int 0..50 (45 = 4.5 stars). NEW prices exclude shipping; the
   `*_SHIPPING` / FBM types include it. Buy Box is `BUY_BOX_SHIPPING`.
 - The official Java framework ships a `ProductAnalyzer` with helpers like `getLast(csv,type)`
@@ -197,11 +257,15 @@ validate against Amazon Creators API, publish affiliate links to WhatsApp).
 ## Follow-up research questions
 
 - Exact, current token costs: /product (with and without `stats`, `offers`, `rating`),
-  and the deals call, straight from keepa.com/#!api on a real account.
+  straight from keepa.com/#!api on a real account. (Deals call **answered: 5/page** —
+  `experiments/02-deals/FINDINGS.md`; the /token check is free — `01-key-and-tokens`.)
 - Exact subscription tiers and EUR prices, and the precise per-minute refill rate per tier;
   pick the smallest tier that sustains our planned daily deal volume.
 - Full deals-query semantics for amazon.de: best `priceTypes` + `deltaPercentRange` +
-  `salesRankRange` combination to surface genuine, popular drops with low noise.
+  `salesRankRange` combination to surface genuine, popular drops with low noise. (Query/response
+  shape now mapped in `experiments/02-deals/FINDINGS.md`; open part is the **glitch-guard
+  tuning** — `sortType=4` floats price-spike artifacts, so find bounds/`salesRankDrops*` combo
+  that filters them.)
 - Authoritative API Terms of Service: what we may store, cache, and redisplay (price-history
   redistribution limits) when posting deals publicly.
 - Whether any community PHP client is good enough to adopt, or whether we write our own thin

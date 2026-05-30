@@ -1,0 +1,9 @@
+{
+  "name": "keepa-experiments",
+  "private": true,
+  "type": "module",
+  "description": "Throwaway TypeScript probes to confirm the Keepa API. See README.md.",
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}
