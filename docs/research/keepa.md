@@ -126,71 +126,43 @@ validate against Amazon Creators API, publish affiliate links to WhatsApp).
   **`0`** for "no change / not calculable". Rule that works everywhere: treat any value `< 0`
   as absent, and for `delta` also ignore `0`.
 
-#### Two landmines for the production funnel **[VERIFIED]**
-- **`sortType=4` (percent delta) floats data-glitch deals to the top.** A €6.99 cable showed a
-  €543 "weighted average" → 99% "drop"; the math is internally consistent (`avg − current =
-  delta`), so Keepa's average is polluted by transient price spikes, not a decode bug. Ranking
-  on `deltaPercent` alone surfaces junk — add glitch guards (sanity-bound `currentRange`/`avg`,
-  prefer `sortType=2` absolute delta, and/or combine with `salesRankDrops*`).
-- **[VERIFIED] glitch-guard recipe (exp 04, [`../../experiments/04-glitch-guard/FINDINGS.md`](../../experiments/04-glitch-guard/FINDINGS.md)):**
-  on a live amazon.de `/deal` (sortType 4) → `/product?stats=90` chain, **only 2 of the top 25
-  candidates survived** (23 rejected; 30 tokens). Reject bounds (first-pass): `current < €2`,
-  `avg90 > 3×avg30` (recent spike), `claimed% > 97`, `salesRankDrops90 < 1` (demand),
-  `outOfStockPercentage90 > 80`, plus an all-time-min floor. Rank survivors by
-  `verified_drop × ln(1+salesRankDrops90) × (1 − oos90/100)`.
-- **[VERIFIED] the "verified drop" divergence idea is dead (exp 04):** recomputing the drop from
-  `/product` (`(stats.avg90 − current)/stats.avg90`) and comparing to the deal's claimed
-  `deltaPercent[90d][AMAZON]` gave **0 divergence on all 25** — Keepa derives the deal's 90d %
-  from the *same* `avg90` that `/product` stats returns, so the recomputation adds nothing.
-  Catch glitches **structurally** (spike ratio, abs-price floor, demand gate, absurd-claim cap),
-  not by claimed-vs-verified disagreement.
-- **[VERIFIED] glitch-guard is mostly a /deal pre-filter (exp 04):** `current`, `deltaPercent[90d]`,
-  the `avg` 2D array, and `salesRankDrops90` are all in the **/deal payload** — confirmed
-  `deal.avg[90]==stats.avg90` and `deal.avg[MONTH]≈stats.avg30` for **25/25**, so the spike ratio
-  is derivable from the deal page alone. Only the OOS guard (`outOfStockPercentage90`, absent from
-  the deal object) and the all-time-min floor need a `/product` call. So pre-filter on the cheap
-  5-token deal page and reserve `/product` for survivors. **[VERIFIED, exp 05]** measured below.
-- **[VERIFIED] funnel dry run + measured cost (exp 05, [`../../experiments/05-funnel-dryrun/FINDINGS.md`](../../experiments/05-funnel-dryrun/FINDINGS.md)):**
-  end-to-end on a live amazon.de `/deal` page (sortType 4, 90d), the deal-payload-only pre-filter
-  cleared **124 of 150 deals with zero `/product` calls** (reject mix: no-demand 81, spike 40,
-  abs-price-floor 37, absurd-claim 7), leaving **26 deal-stage survivors -> 26 final survivors** after
-  the deep `/product?stats=90` re-check (the deep stage rejected **0** on this feed). A full pass cost
-  **31 tokens** (5 deal + 26 product). The funnel cost model is **`5/page + 1 per deal-stage survivor`**.
-  At 20/min refill a 31-token pass is ~1.55 min of refill, i.e. sustainable at ~39 passes/hour; token
-  throughput is not the constraint at this survivor rate.
-- **[VERIFIED] the pre-filter saves tokens only on a FILTERED query, not a raw sortType=4 page (exp 05):**
-  on this glitch-sorted page the 26 survivors cost 31 tokens, **1 MORE** than a naive fixed top-25 deep
-  lookup (30), because once the obvious junk is removed the remaining high-% drops mostly pass. The
-  pre-filter's value is **correctness** (it deep-looks-up only structurally-sound deals, not an arbitrary
-  top-N), not raw savings on a glitch feed. Real savings appear when survivors fall well below the deep
-  batch size, i.e. on a production query with `isFilterEnabled`, sales-rank floors and category excludes.
-- **[VERIFIED] `deal.avg*` is the same value as `stats.*` ROUNDED, not bit-identical (exp 05):** exp04
-  said `deal.avg[90]==stats.avg90`; exp05's offline re-check shows it is bit-exact only **12/26** of the
-  time and ~1 cent off the rest (all within 1 cent). Compare with a tolerance, never `===`. The derived
-  spike ratio still agreed between the two sources on all 26 survivors (no deal-stage-vs-deep-stage spike
-  disagreement on this feed), and **verified drop == claimed drop for all 26**, reconfirming the divergence
-  check is dead (Deals landmine above). Keep the spike check in both stages regardless: the deal page is the
-  cheap recall-safe net, `stats.avg30` (exact 30d) is the canonical deep-stage window. The lone ~90%
-  survivor off a stable high baseline (`B0F2G9DLDP`) is again the residual false-positive class,
-  reconfirming live re-validation as the real backstop.
-- **[VERIFIED] the deep `/product` stage is OPTIONAL given the Creators backstop (exp 05):** it
-  rejected **0/26** survivors on this feed, and the Amazon Creators API live-price check already
-  re-validates every survivor before publish, so `/product` is not required for correctness. Its only
-  unique signal is `outOfStockPercentage90` (absent from the deal payload; came within 7 points of
-  firing) - useful to drop obvious OOS-poisoned baselines *before* spending a Creators call. **Default:
-  skip `/product` and lean on the Creators backstop; keep it only if Creators API calls are scarcer
-  than Keepa tokens.** Token-by-flow on a ~26-survivor page: **deal-only = 5 tokens/page (~240
-  passes/hr); deal + /product = 31 tokens/page (~39 passes/hr)** - the deep stage costs ~6.2x more,
-  exactly 1 token/survivor. The full step-by-step funnel example and scaled token tables live in
-  [`experiments/05-funnel-dryrun/FINDINGS.md`](../../experiments/05-funnel-dryrun/FINDINGS.md).
-- **[VERIFIED] residual false-positive (exp 04):** a baseline wrong for >90 days (`avg30 ≈ avg90`,
-  both inflated) defeats every avg-based guard — both survivors were ~90% drops off such
-  stable-but-suspect baselines. The funnel's **live re-validation via the Amazon Creators API** is
-  the real backstop; treat glitch-guard output as "candidates for live validation", never as final.
-- **JS Long-precision:** the "unknown root category" sentinel `9223372036854775807`
-  (Long.MAX_VALUE) corrupts under JS `JSON.parse` (→ `…776000`); PHP 64-bit ints are fine.
-  Real node IDs seen are all < 2^53 and safe. Treat that sentinel (or `rootCat` 0) as
-  "unknown root category". Relevant only if any tooling round-trips deals through JS.
+#### Production funnel + glitch guard **[VERIFIED]**
+`sortType=4` (percent delta) floats **data-glitch deals to the top**: a €6.99 cable showed a €543
+"weighted average" → 99% "drop". The math is internally consistent (`avg − current = delta`), so
+Keepa's average is polluted by transient price spikes, not a decode bug — ranking on `deltaPercent`
+alone surfaces junk. The funnel and gate below were validated end-to-end on a live amazon.de feed
+(exp 04-05); only the design is here, per-feed numbers (reject histograms, survivor counts, scaled
+token tables, worked example) live in the FINDINGS, linked at the end.
+
+- **Funnel (locked):** filtered `/deal` wide net → **deal-payload pre-filter** (0 API calls) →
+  *optional* `/product?stats=90` re-check → **Amazon Creators API live check (mandatory backstop)**.
+  Cost model **`5/page + 1 per deal-stage survivor`**; sustainable on the 20/min tier (a ~31-token
+  pass ≈ 1.6 min of refill, ~39 passes/hour — token throughput is not the constraint at this rate).
+- **Gate rules (first-pass, one feed — re-tune in production):** reject `current < €2`,
+  `avg90 > 3×avg30` (recent spike), `claimed% > 97` (absurd), `salesRankDrops90 < 1` (no demand);
+  `outOfStockPercentage90 > 80` and an all-time-min floor additionally need `/product`. Rank
+  survivors by `verified_drop × ln(1+salesRankDrops90) × (1 − oos90/100)`.
+- **The pre-filter runs free on the /deal payload:** `current`, `deltaPercent[90d]`, the `avg` 2D
+  array (`[90]` and `[MONTH]`), and `salesRankDrops90` are all in the deal object, so the spike
+  ratio and the other three rejects are derivable from the cheap 5-token page — only the OOS guard
+  and all-time-min floor need a `/product` call. (`deal.avg*` equals `stats.*` *rounded*, within 1
+  cent — compare with a tolerance, never `===`; the spike verdict agreed across both sources.)
+- **Drop the claimed-vs-verified divergence check:** Keepa derives the deal's 90d % from the *same*
+  `avg90` that `/product` stats returns, so recomputing it gave **0 divergence on every candidate** —
+  it adds nothing. Catch glitches structurally (spike ratio, price floor, demand gate, absurd-claim).
+- **The deep `/product` stage is OPTIONAL given the Creators backstop:** on the test feed it rejected
+  **0** survivors, and the Creators live-price check already re-validates before publish. Its only
+  unique signal is `outOfStockPercentage90` (absent from the deal payload). **Default: skip `/product`,
+  lean on Creators;** keep it only if Creators calls are scarcer than Keepa tokens.
+- **Residual false-positive — the real reason Creators is mandatory:** a baseline wrong for >90 days
+  (`avg30 ≈ avg90`, both inflated) defeats every avg-based guard and looks identical to a genuine
+  clearance. Treat glitch-guard output as **"candidates for live validation," never as final.**
+- **JS Long-precision:** the "unknown root category" sentinel `9223372036854775807` (Long.MAX_VALUE)
+  corrupts under JS `JSON.parse` (→ `…776000`); PHP 64-bit ints are fine. Treat that sentinel (or
+  `rootCat` 0) as "unknown root category". Relevant only if tooling round-trips deals through JS.
+
+Per-feed detail: [`exp 04`](../../experiments/04-glitch-guard/FINDINGS.md) (glitch-guard recipe) ·
+[`exp 05`](../../experiments/05-funnel-dryrun/FINDINGS.md) (funnel dry run, cost tables).
 
 ### /product endpoint (per-ASIN deep history)
 - Query one or many ASINs; returns the full product object with delta-encoded history arrays.
