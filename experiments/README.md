@@ -32,7 +32,7 @@ bun run 01-key-and-tokens/run.ts
 | 01 | `01-key-and-tokens` | Does the key work? What's the live token meter? | 0 (free) |
 | 02 | `02-deals` | Deal-query shape + response shape for amazon.de | 5/page (flat, confirmed) |
 | 03 | `03-product` | /product + `stats`, CSV/time decoding on a real ASIN | 1/ASIN (confirmed; stats free) |
-| 04 | `04-glitch-guard` | Which `stats`-based bounds separate real deals from price-glitch artifacts (the `sortType=4` junk exp02 flagged)? | ~5/page + 1/survivor |
+| 04 | `04-glitch-guard` | Which `stats`-based bounds separate real deals from price-glitch artifacts (the `sortType=4` junk exp02 flagged)? | 5/page + 1/candidate (confirmed) |
 | 05 | `05-funnel-dryrun` | End-to-end `/deal` → filter → batched `/product+stats`: survivors/page, total tokens, throughput vs 20/min refill | ~5/page + 1/survivor |
 
 ## Discipline (so we don't burn tokens)
