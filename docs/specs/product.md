@@ -16,7 +16,7 @@ Build a small set of cooperating applications in a PHP monorepo, prototyped toge
 Each cycle:
 
 1. **Source candidates** from Keepa's deals (browsing deals) endpoint, filtered by an editable criteria config (discount percent, price band, sales rank, categories, rating). One cheap call returns up to 150 recently changed deals.
-2. **Deduplicate** against previously posted deals using a small storage interface (file-backed first, swappable to Postgres later).
+2. **Deduplicate** against previously posted deals in Postgres, accessed through a small storage interface (so the query layer stays swappable and testable).
 3. **Validate survivors** against the real Amazon Creators API (`GetItems` with `OffersV2`): live buy-box price, availability, condition, merchant, and Amazon's own `dealDetails`. The affiliate link is the API-provided `detailPageURL`, which already carries the partner tag, not a hand-built URL.
 4. **Apply the deal gate** to decide what is "truly a deal" worth publishing (exact gate is an open question below).
 5. **Publish, paced**, to a single WhatsApp channel as plain-text product links via WAHA (a Dockerized WhatsApp HTTP bridge running as a sidecar), best deals first, capped per cycle with spacing and an hourly ceiling.
@@ -47,7 +47,6 @@ Cross-cutting integration code (Keepa client, Amazon Creators client, WAHA clien
 - Multiple marketplaces at runtime: amazon.de only now, though modeled (domain, tag, currency, locale) so more can be added.
 - Multiple channels and category-to-channel routing: one channel now, modeled as config for later.
 - Image or rich-media posts: plain-text links only.
-- A production database: file-backed state first, behind a storage interface; Postgres deferred until genuinely needed.
 - Conversion and earnings analytics, dashboards, and reporting.
 - Bootstrapping Amazon API eligibility: API access already exists, so the 10-qualifying-sales gate is not part of this work.
 
@@ -63,7 +62,7 @@ Cross-cutting integration code (Keepa client, Amazon Creators client, WAHA clien
 
 ## Constraints
 
-- Technology: PHP across services, Slim Framework for HTTP surfaces, Docker for all components, `bun` (not `npm`) for any JS tooling. Postgres is the eventual datastore but is deferred behind a storage interface; start file-backed.
+- Technology: PHP across services, Symfony for all services and web apps (Symfony Console for the headless pipeline CLI, the full framework for the later HTTP surfaces), Postgres as the datastore from the start (run as a Docker service), Doctrine (ORM with migrations) for persistence, accessed behind a storage interface, Docker for all components, `bun` (not `npm`) for any JS tooling.
 - WhatsApp delivery is channels-only (`@newsletter`) via WAHA as a sidecar. WAHA drives a logged-in WhatsApp account through WhatsApp Web, which is unofficial and carries a ban risk; the architecture must keep this fragile component isolated and the rest of the system fail-safe around it.
 - Amazon validation must use the Creators API (the PA-API successor); the official PHP SDK is available. Affiliate links must be the API-provided `detailPageURL`.
 - Keepa access is metered by tokens; the design must filter hard on the cheap deals call and deep-fetch per-ASIN history only for survivors.
