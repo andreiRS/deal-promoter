@@ -149,7 +149,40 @@ validate against Amazon Creators API, publish affiliate links to WhatsApp).
   `deal.avg[90]==stats.avg90` and `deal.avg[MONTH]≈stats.avg30` for **25/25**, so the spike ratio
   is derivable from the deal page alone. Only the OOS guard (`outOfStockPercentage90`, absent from
   the deal object) and the all-time-min floor need a `/product` call. So pre-filter on the cheap
-  5-token deal page and reserve `/product` for survivors — token-savings to measure in exp 05.
+  5-token deal page and reserve `/product` for survivors. **[VERIFIED, exp 05]** measured below.
+- **[VERIFIED] funnel dry run + measured cost (exp 05, [`../../experiments/05-funnel-dryrun/FINDINGS.md`](../../experiments/05-funnel-dryrun/FINDINGS.md)):**
+  end-to-end on a live amazon.de `/deal` page (sortType 4, 90d), the deal-payload-only pre-filter
+  cleared **124 of 150 deals with zero `/product` calls** (reject mix: no-demand 81, spike 40,
+  abs-price-floor 37, absurd-claim 7), leaving **26 deal-stage survivors -> 26 final survivors** after
+  the deep `/product?stats=90` re-check (the deep stage rejected **0** on this feed). A full pass cost
+  **31 tokens** (5 deal + 26 product). The funnel cost model is **`5/page + 1 per deal-stage survivor`**.
+  At 20/min refill a 31-token pass is ~1.55 min of refill, i.e. sustainable at ~39 passes/hour; token
+  throughput is not the constraint at this survivor rate.
+- **[VERIFIED] the pre-filter saves tokens only on a FILTERED query, not a raw sortType=4 page (exp 05):**
+  on this glitch-sorted page the 26 survivors cost 31 tokens, **1 MORE** than a naive fixed top-25 deep
+  lookup (30), because once the obvious junk is removed the remaining high-% drops mostly pass. The
+  pre-filter's value is **correctness** (it deep-looks-up only structurally-sound deals, not an arbitrary
+  top-N), not raw savings on a glitch feed. Real savings appear when survivors fall well below the deep
+  batch size, i.e. on a production query with `isFilterEnabled`, sales-rank floors and category excludes.
+- **[VERIFIED] `deal.avg*` is the same value as `stats.*` ROUNDED, not bit-identical (exp 05):** exp04
+  said `deal.avg[90]==stats.avg90`; exp05's offline re-check shows it is bit-exact only **12/26** of the
+  time and ~1 cent off the rest (all within 1 cent). Compare with a tolerance, never `===`. The derived
+  spike ratio still agreed between the two sources on all 26 survivors (no deal-stage-vs-deep-stage spike
+  disagreement on this feed), and **verified drop == claimed drop for all 26**, reconfirming the divergence
+  check is dead (Deals landmine above). Keep the spike check in both stages regardless: the deal page is the
+  cheap recall-safe net, `stats.avg30` (exact 30d) is the canonical deep-stage window. The lone ~90%
+  survivor off a stable high baseline (`B0F2G9DLDP`) is again the residual false-positive class,
+  reconfirming live re-validation as the real backstop.
+- **[VERIFIED] the deep `/product` stage is OPTIONAL given the Creators backstop (exp 05):** it
+  rejected **0/26** survivors on this feed, and the Amazon Creators API live-price check already
+  re-validates every survivor before publish, so `/product` is not required for correctness. Its only
+  unique signal is `outOfStockPercentage90` (absent from the deal payload; came within 7 points of
+  firing) - useful to drop obvious OOS-poisoned baselines *before* spending a Creators call. **Default:
+  skip `/product` and lean on the Creators backstop; keep it only if Creators API calls are scarcer
+  than Keepa tokens.** Token-by-flow on a ~26-survivor page: **deal-only = 5 tokens/page (~240
+  passes/hr); deal + /product = 31 tokens/page (~39 passes/hr)** - the deep stage costs ~6.2x more,
+  exactly 1 token/survivor. The full step-by-step funnel example and scaled token tables live in
+  [`experiments/05-funnel-dryrun/FINDINGS.md`](../../experiments/05-funnel-dryrun/FINDINGS.md).
 - **[VERIFIED] residual false-positive (exp 04):** a baseline wrong for >90 days (`avg30 ≈ avg90`,
   both inflated) defeats every avg-based guard — both survivors were ~90% drops off such
   stable-but-suspect baselines. The funnel's **live re-validation via the Amazon Creators API** is
@@ -310,26 +343,33 @@ validate against Amazon Creators API, publish affiliate links to WhatsApp).
     persist the last cursor so a token-exhausted run can resume.
   - Cache product results for a TTL so re-checks within the same window cost nothing.
 
-## Follow-up research questions
+## Experiments: WRAPPED (2026-05-30)
 
-- Exact, current token costs: /product (with and without `stats`, `offers`, `rating`),
-  straight from keepa.com/#!api on a real account. (Deals call **answered: 5/page** —
-  `experiments/02-deals/FINDINGS.md`; the /token check is free — `01-key-and-tokens`.)
-- Exact subscription tiers and EUR prices, and the precise per-minute refill rate per tier;
-  pick the smallest tier that sustains our planned daily deal volume.
-- Full deals-query semantics for amazon.de: best `priceTypes` + `deltaPercentRange` +
-  `salesRankRange` combination to surface genuine, popular drops with low noise. (Query/response
-  shape now mapped in `experiments/02-deals/FINDINGS.md`; **[CLOSED by exp 04 — see the Deals landmines section.]** the former open part, **glitch-guard
-  tuning** — `sortType=4` floats price-spike artifacts, so find bounds/`salesRankDrops*` combo
-  that filters them.)
-- Authoritative API Terms of Service: what we may store, cache, and redisplay (price-history
-  redistribution limits) when posting deals publicly.
-- Whether any community PHP client is good enough to adopt, or whether we write our own thin
-  client + decoders (keepa-time, delta-CSV, -1 handling, type-index table).
-- How fresh deals/prices really are for amazon.de mid-tier products, to size the
-  re-validation window against the Amazon Creators API.
-- Whether the deals endpoint supports a "since last poll" delta so we only process new drops
-  rather than re-scanning pages.
+The throwaway TypeScript probes (exp 01-05) have answered enough to build the production PHP
+client with confidence. **What's confirmed:** the token meter and free `/token` check (01); the
+`/deal` request/response shape and 5/page cost (02); `/product+stats` shape and 1/ASIN cost (03);
+the structural glitch-guard recipe (04); and the end-to-end funnel - survivors/page, total cost,
+throughput, and that the deep `/product` stage is optional given the Creators backstop (05). The
+funnel design (`/deal` wide net -> deal-payload pre-filter -> optional `/product` -> Creators
+live re-check) and its cost model (`5/page + 1/survivor`) are locked. **No further Keepa probes
+are needed to start the build.** The items below are deferred to production (decided in PHP,
+against a live account, or in the offers-probe), not blockers.
+
+## Deferred to production (not blocking the build)
+
+- **PHP client vs community lib:** write our own thin HTTP client + decoders (keepa-time,
+  delta-CSV, -1/-2 sentinels, type-index table), porting the Java `ProductAnalyzer`/`KeepaTime`;
+  validate any third-party PHP lib before relying on it. Decide during the build.
+- **`*_SHIPPING` 3-wide csv stride + the 2026-02-23 pricing-definition change:** needs a dedicated
+  `offers`-probe (we avoid `offers` for cost); flagged as a known decoder landmine for the port.
+- **Subscription tier + EUR price:** the 20/min tier is confirmed sustainable for the funnel
+  (~39 full passes/hr); pick the smallest tier that covers planned daily volume on a real account.
+- **Terms of Service:** what we may store, cache, and redisplay (price-history redistribution
+  limits) when posting deals publicly - confirm before launch.
+- **Data freshness for amazon.de mid-tier products:** size the Creators API re-validation window;
+  measure once the production funnel is running.
+- **Deals "since last poll" delta:** whether we can fetch only new drops rather than re-scanning
+  pages - investigate as a production optimisation.
 
 ## Sources
 
