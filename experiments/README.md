@@ -24,6 +24,15 @@ bun run 01-key-and-tokens/run.ts
   meter). Reference port target for the PHP client.
 - `NN-name/` — one folder per experiment. Each has a `run.ts` (the probe) and a
   `FINDINGS.md` (what the live API actually returned vs. what the brief claimed).
+- `NN-name/sample.*.json` — a small, **committed** trimmed sample of that
+  experiment's API response, so you can see the real shape without re-calling or
+  re-reading the docs. The full raw `out/*.dump.json` stay gitignored (multi-MB,
+  stale snapshots, Keepa redistribution ToS). Each sample is one illustrative
+  record: `02` a persistent-baseline glitch (the HDMI cable), `03` the reference
+  product+`stats` shape, `04` a recent-*spike* glitch (TV stand, avg90 ≫ avg30),
+  `05` a genuine demand-led survivor (Bosch sensor). In `sample.product.json` the
+  `csv` series are truncated to the last 3 points and long `variations` lists are
+  capped (see the `_csv_note` / `_variations_note` keys); `stats` is kept whole.
 
 ## Experiments
 
