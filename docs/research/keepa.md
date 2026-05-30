@@ -143,6 +143,27 @@ validate against Amazon Creators API, publish affiliate links to WhatsApp).
   the lowest in 90/180 days?"), `history` (toggle full history), `rating`, and `offers`
   (expensive, live offers/Buy-Box, only if needed). Use `stats` to validate deals without
   decoding the whole CSV ourselves.
+- **[VERIFIED]** (exp 03, [`../../experiments/03-product/FINDINGS.md`](../../experiments/03-product/FINDINGS.md)):
+  **token cost is a flat 1 per ASIN** (batch of 3 cost `tokensConsumed: 3`), batch ≤ 100 ASINs
+  per call, and **`stats=N` adds no token cost** (`tokenFlowReduction: 0`). The response payload
+  is `products[]` in ASIN order.
+- **[VERIFIED]** `stats=90` returns, per Price-Type index, `current` / `avg` /
+  `avg30/90/180/365` / `atIntervalStart` / `outOfStockPercentage30/90/180/365` (1D arrays,
+  `-1` = no data), and `min` / `max` / `minInInterval` / `maxInInterval` as **2D extremes**
+  (`null` OR `[keepaMinute, value]`). `salesRankDrops30/90/180/365`, `totalOfferCount` and
+  `lightningDealInfo` are **scalars** on `stats`, not type-indexed. `stats.current` matched the
+  hand-decoded last `csv` point exactly, so production can read `stats` and skip full-history
+  decoding for the "is this the lowest in 90d?" check.
+- **[VERIFIED] sentinel split inside `stats`:** the 1D type-indexed arrays use `-1` (no data /
+  OOS / insufficient history); the **offers-gated *scalar* subfields use `-2`** = "offers not
+  requested" (`buyBoxPrice=-2`, `offerCountFBA/FBM=-2`, `retrievedOfferCount=-2`,
+  `buyBoxIsFBA=null`). Those buy-box/offer-count keys are **present even without `offers`** —
+  only their values are gated, so test for `-2`/`null`, not key absence.
+- **[VERIFIED] `rating`/reviews are not free:** `RATING` (csv 16) and `COUNT_REVIEWS` (csv 17)
+  came back `-1` / absent on a plain `stats=90` call. Star ratings require adding `rating=1` to
+  the query; `stats` alone does not surface them.
+- Interval-shortening: `stats=N` clamps to the product's tracked age. `avg180`/`avg365` = `-1`
+  on a young product means "insufficient history", NOT out-of-stock.
 
 ### Product Finder
 - A search/filter over the whole catalog (criteria dict, returns ASIN list). More of a
@@ -195,9 +216,22 @@ validate against Amazon Creators API, publish affiliate links to WhatsApp).
 - Prices are integers in the marketplace's minor unit (euro cents for amazon.de). A value of
   **-1 means "no data / out of stock"** and must be filtered, not treated as a 0 price.
   **[VERIFIED]** on deals — but note the sentinel differs by array (deals `avg`/`delta` use
-  `-2`/`0`, see the Deals section); confirm per-field when decoding `/product` `csv` too.
-- RATING is an int 0..50 (45 = 4.5 stars). NEW prices exclude shipping; the
-  `*_SHIPPING` / FBM types include it. Buy Box is `BUY_BOX_SHIPPING`.
+  `-2`/`0`, see the Deals section). **[VERIFIED]** (exp 03) the `/product` **`csv` arrays use
+  `-1` only** (every value slot scanned), resolving the earlier open question. Inside the
+  `/product` `stats` object both appear: 1D type-indexed arrays use `-1`; offers-gated scalar
+  subfields use `-2`.
+- **[VERIFIED]** (exp 03) **Keepa-time decodes `/product` timestamps** too: `trackingSince`,
+  `listedSince`, `lastUpdate`, `lastPriceChange`, and each `csv` point all decode to sane dates
+  via `(min + 21564000) * 60000`.
+- RATING is an int **0..50 (45 = 4.5 stars); divide by 10** **[VERIFIED]** (exp 03 — the ÷10
+  formatter is locked in `formatStatValue`, range asserted `[0,5]`). NEW prices exclude
+  shipping; the `*_SHIPPING` / FBM types include it. Buy Box is `BUY_BOX_SHIPPING`.
+- **`*_SHIPPING` 3-wide stride PENDING (not verified):** csv types 7, 18, 19–29, 32 are
+  `[time, price, shipping]` (3-wide), unlike the 2-wide `[time, value]` price/rank/count types.
+  exp 03 could not exercise this — those csv slots are `null` without `offers` (which we avoid
+  for cost). Needs a dedicated offers-probe. **`decodeCsv`'s flat 2-wide stride is therefore a
+  known landmine for shipping-bearing types** in the PHP port. Also pending: the **2026-02-23
+  pricing-definition change** (lowest-listing → landing price) — confirm impact in the offers-probe.
 - The official Java framework ships a `ProductAnalyzer` with helpers like `getLast(csv,type)`
   and `calcWeightedMean(csv, now, days, type)`; the `/product` `stats` parameter computes
   min/max/avg server-side so we usually do not need to decode full history ourselves.
