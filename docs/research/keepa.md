@@ -132,6 +132,28 @@ validate against Amazon Creators API, publish affiliate links to WhatsApp).
   delta`), so Keepa's average is polluted by transient price spikes, not a decode bug. Ranking
   on `deltaPercent` alone surfaces junk — add glitch guards (sanity-bound `currentRange`/`avg`,
   prefer `sortType=2` absolute delta, and/or combine with `salesRankDrops*`).
+- **[VERIFIED] glitch-guard recipe (exp 04, [`../../experiments/04-glitch-guard/FINDINGS.md`](../../experiments/04-glitch-guard/FINDINGS.md)):**
+  on a live amazon.de `/deal` (sortType 4) → `/product?stats=90` chain, **only 2 of the top 25
+  candidates survived** (23 rejected; 30 tokens). Reject bounds (first-pass): `current < €2`,
+  `avg90 > 3×avg30` (recent spike), `claimed% > 97`, `salesRankDrops90 < 1` (demand),
+  `outOfStockPercentage90 > 80`, plus an all-time-min floor. Rank survivors by
+  `verified_drop × ln(1+salesRankDrops90) × (1 − oos90/100)`.
+- **[VERIFIED] the "verified drop" divergence idea is dead (exp 04):** recomputing the drop from
+  `/product` (`(stats.avg90 − current)/stats.avg90`) and comparing to the deal's claimed
+  `deltaPercent[90d][AMAZON]` gave **0 divergence on all 25** — Keepa derives the deal's 90d %
+  from the *same* `avg90` that `/product` stats returns, so the recomputation adds nothing.
+  Catch glitches **structurally** (spike ratio, abs-price floor, demand gate, absurd-claim cap),
+  not by claimed-vs-verified disagreement.
+- **[VERIFIED] glitch-guard is mostly a /deal pre-filter (exp 04):** `current`, `deltaPercent[90d]`,
+  the `avg` 2D array, and `salesRankDrops90` are all in the **/deal payload** — confirmed
+  `deal.avg[90]==stats.avg90` and `deal.avg[MONTH]≈stats.avg30` for **25/25**, so the spike ratio
+  is derivable from the deal page alone. Only the OOS guard (`outOfStockPercentage90`, absent from
+  the deal object) and the all-time-min floor need a `/product` call. So pre-filter on the cheap
+  5-token deal page and reserve `/product` for survivors — token-savings to measure in exp 05.
+- **[VERIFIED] residual false-positive (exp 04):** a baseline wrong for >90 days (`avg30 ≈ avg90`,
+  both inflated) defeats every avg-based guard — both survivors were ~90% drops off such
+  stable-but-suspect baselines. The funnel's **live re-validation via the Amazon Creators API** is
+  the real backstop; treat glitch-guard output as "candidates for live validation", never as final.
 - **JS Long-precision:** the "unknown root category" sentinel `9223372036854775807`
   (Long.MAX_VALUE) corrupts under JS `JSON.parse` (→ `…776000`); PHP 64-bit ints are fine.
   Real node IDs seen are all < 2^53 and safe. Treat that sentinel (or `rootCat` 0) as
