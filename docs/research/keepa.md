@@ -319,7 +319,7 @@ validate against Amazon Creators API, publish affiliate links to WhatsApp).
   pick the smallest tier that sustains our planned daily deal volume.
 - Full deals-query semantics for amazon.de: best `priceTypes` + `deltaPercentRange` +
   `salesRankRange` combination to surface genuine, popular drops with low noise. (Query/response
-  shape now mapped in `experiments/02-deals/FINDINGS.md`; open part is the **glitch-guard
+  shape now mapped in `experiments/02-deals/FINDINGS.md`; **[CLOSED by exp 04 — see the Deals landmines section.]** the former open part, **glitch-guard
   tuning** — `sortType=4` floats price-spike artifacts, so find bounds/`salesRankDrops*` combo
   that filters them.)
 - Authoritative API Terms of Service: what we may store, cache, and redisplay (price-history
