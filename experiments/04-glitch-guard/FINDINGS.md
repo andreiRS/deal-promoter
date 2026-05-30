@@ -60,8 +60,15 @@ weighted averages → the spike ratio), and `salesRankDrops90`. Only
 all-time-min floor actually require a `/product` call. So the glitch-guard can run
 as a **pre-filter on the cheap /deal page (5 tokens / 150 deals)**, reserving the
 `/product` deep-lookup (1 token each) for survivors' final validation.
-→ Confirm the exact `deal.avg[MONTH] == stats.avg30` correspondence and measure
-the token savings in **exp 05**.
+
+Confirmed against the dumps (no extra API calls): **`deal.avg[90][AMAZON] ==
+stats.avg90` for 25/25** candidates (within 0.1%) and **`deal.avg[MONTH][AMAZON] ≈
+stats.avg30` for 25/25** (within 2%) — so the spike ratio is fully derivable from
+the deal payload. `outOfStockPercentage*` is **absent** from the deal object,
+confirming OOS is the only structural guard that needs `/product`. (Note: the deal
+payload's `salesRankDrops90` can read `-1` where stats reads `0` — both still trip
+the `< 1` demand gate, so the gate works on either source.) → measure the actual
+token savings of the pre-filter in **exp 05**.
 
 ## The two glitch sub-types (why the guard combination is needed)
 
