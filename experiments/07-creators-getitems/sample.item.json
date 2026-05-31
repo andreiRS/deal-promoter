@@ -1,0 +1,23 @@
+{
+  "errors": [
+    {
+      "code": "InvalidParameterValue",
+      "message": "The ItemIds B000000000 provided in the request is invalid."
+    }
+  ],
+  "itemsResult": {
+    "items": [
+      {
+        "asin": "B0010AH4BW",
+        "detailPageURL": "https://www.amazon.de/dp/B0010AH4BW?tag=YOURTAG-21&linkCode=ogi&th=1&psc=1",
+        "itemInfo": {
+          "title": {
+            "displayValue": "Bosch Automotive 0280217117 Luftmassenmesser",
+            "label": "Title",
+            "locale": "de_DE"
+          }
+        }
+      }
+    ]
+  }
+}
