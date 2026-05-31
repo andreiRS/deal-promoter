@@ -54,8 +54,10 @@ affiliate link we post is the one this API returns, not a hand-built URL.
   **region-specific token endpoint** chosen by your credential Version, then call the product
   API with that token. There is no per-request canonical-request signing, no `X-Amz-Date`,
   no regional signing key.
-- For our **EU / amazon.de** project the credential Version is **2.2** (Cognito) or **3.2**
-  (Login with Amazon) depending on issue date (CONFIRM on the credential page):
+- For our **EU / amazon.de** project the credential Version is **CONFIRMED 3.2 → the
+  Login with Amazon (LWA) path** (experiment 06, 2026-05-31). Note the credential page
+  writes it with a leading `v` (`v3.2`); strip non-digits before deriving the major.
+  The v2.2 (Cognito) path below is retained for reference / other accounts:
   - v2.2 token endpoint (Cognito):
     `creatorsapi.auth.eu-south-2.amazoncognito.com/oauth2/token`, scope `creatorsapi/default`
     (single slash), form-encoded body; token endpoint is rate-limited (~300 token requests /
@@ -79,6 +81,29 @@ affiliate link we post is the one this API returns, not a hand-built URL.
   error surfaces as `AssociateNotEligible`).
 
 ## 3. Parts of the API essential for us
+
+> **CONFIRMED by experiments 06–07 (2026-05-31), from a live call + the official
+> SDK.** The PA-API 5.0 cross-links below were misleading on transport/casing —
+> use these confirmed values:
+> - Product endpoint: **`POST https://creatorsapi.amazon/catalog/v1/getItems`**
+>   (single global host on the dotless `.amazon` gTLD; NOT `webservices.amazon.com/paapi5`).
+> - Marketplace is the **`x-marketplace` header** (`www.amazon.de`), **not** a body field;
+>   there is no `itemIdType` in the body. Body keys are lowerCamelCase: `partnerTag`
+>   (required, validated against the credential's store), `itemIds`, `resources`.
+> - **Resource strings are lowercase-dotted** (`itemInfo.title`,
+>   `offersV2.listings.price`, …), NOT PA-API PascalCase.
+> - **Response envelope is lowerCamelCase**: `itemsResult.items[]`, `errors[]`, and
+>   per-item `asin` / `detailPageURL`.
+> - An invalid/unmapped `partnerTag` → HTTP 400 `{type: ValidationException,
+>   reason: InvalidPartnerTag, fieldList:[{name:"partnerTag"}]}` (request-level,
+>   distinct from per-item `errors[]`).
+> - **`detailPageURL` already carries our affiliate link** (proven live):
+>   `…/dp/<asin>?tag=<our-tag>&linkCode=ogi&th=1&psc=1`. Use it verbatim; no link-building.
+> - **Per-item `errors[]` entries are `{code, message}` only — NO `asin` field.** A
+>   bad ASIN gives `code: "InvalidParameterValue"` (NOT `ItemNotAccessible`) with the
+>   ASIN only in the message string. To map failures back to inputs, **diff requested
+>   ASINs against `itemsResult.items[].asin`** — you cannot reconcile errors by field.
+> - Auth (our v3.2 LWA credential): `Authorization: Bearer <token>`, no Version suffix.
 
 ### `GetItems` (our hot path)
 - Looks up known ASINs and returns exactly the attributes you request. This is the right
