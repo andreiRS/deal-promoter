@@ -119,6 +119,24 @@ affiliate link we post is the one this API returns, not a hand-built URL.
 - **Batching is the main throughput lever:** one call with 10 ASINs counts as **1 transaction**,
   not 10 (see rate limits). Chunk survivors into groups of 10.
 
+> **CONFIRMED by experiment 08 (2026-05-31), live amazon.de.** The field names in
+> this section are SDK-derived PascalCase; **the live response is lowerCamelCase end
+> to end** — `offersV2.listings[].{price:{money,savingBasis,savings},condition,
+> availability,merchantInfo,dealDetails,isBuyBoxWinner,violatesMAP}`. Map names
+> accordingly. Settled here:
+> - **Discount signals confirmed present**: a Limited-time deal returned
+>   `price.savingBasis` (was price, `savingBasisType: LIST_PRICE`) + `price.savings`
+>   (`{money, percentage}`) + `dealDetails`; a non-deal item had none of the three.
+>   `savingBasisType` is the gameable `LIST_PRICE`, so the real-drop gate stays
+>   `price.money` vs the Keepa baseline — savings %/dealDetails are corroboration.
+> - **Multiple listings of different conditions return, and the cheapest is NOT the
+>   buy box** — pick `isBuyBoxWinner === true`, never `listings[0]`/min-price.
+> - **"OffersV2 only returns NEW" is REFUTED** — a Used/LikeNew listing came back
+>   (non-buy-box). Gate on `buyBox.condition.value === "New"`.
+> - **amazon.de "Amazon" seller id = `A3JWKAKR8XB7XF`** (use for the sold-by-Amazon
+>   gate, since there is no FBA boolean). `violatesMAP` exists and is checkable.
+> - **No rate-limit headers** were observed on the GetItems response.
+
 ### `OffersV2` resource (where the deal truth lives)
 - `OffersV2` replaces the deprecated `Offers`. You request it at a coarse level and get whole
   structs back. The resource strings (put these in `resources`) we care about:

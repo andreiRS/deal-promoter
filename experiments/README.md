@@ -72,6 +72,7 @@ Env (in `.env.example`): `CREATORS_CREDENTIAL_ID`, `CREATORS_CREDENTIAL_SECRET`,
 |---|--------|---------------------|------|
 | 06 | `06-creators-auth` | Which auth path does our Version imply? What does the OAuth token exchange return, and does the token cache? | ~0 (token endpoint rate-limited, not metered) |
 | 07 | `07-creators-getitems` | GetItems request + `ItemsResult`/`Errors` shape: top-level ASIN + tagged `DetailPageURL`, invalid ASIN → `Errors[]` | 1 transaction |
+| 08 | `08-creators-offersv2` | OffersV2 deep dive: does the API show a real discount? `price.money`/`savingBasis`/`savings` + `dealDetails`, buy-box selection, condition/availability gates | 1 transaction |
 
 ---
 
