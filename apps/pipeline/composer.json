@@ -9,12 +9,17 @@
         {
             "type": "path",
             "url": "../../packages/shared"
+        },
+        {
+            "type": "path",
+            "url": "../../packages/creatorsapi-php-sdk"
         }
     ],
     "require": {
         "php": ">=8.4",
         "ext-ctype": "*",
         "ext-iconv": "*",
+        "amazon/creatorsapi-php-sdk": "^1.2",
         "deal-promoter/shared": "@dev",
         "doctrine/dbal": "^4",
         "doctrine/doctrine-bundle": "^3.2",

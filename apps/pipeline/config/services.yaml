@@ -20,6 +20,28 @@ services:
     # Bind the swappable persistence seam to its Doctrine-backed implementation.
     DealPromoter\Shared\Storage\RecordedPriceHistory: '@App\Storage\DoctrineRecordedPriceHistory'
 
+    # --- Live Snapshot (Amazon CreatorsAPI) ---
+    # The SDK's DefaultApi is built by a factory from plain env credentials.
+    # The live HTTP call is a [manual] smoke; tests inject a mocked DefaultApi.
+    App\Creators\DefaultApiFactory:
+        arguments:
+            $credentialId: '%env(CREATORS_CREDENTIAL_ID)%'
+            $credentialSecret: '%env(CREATORS_CREDENTIAL_SECRET)%'
+            $version: '%env(CREATORS_VERSION)%'
+
+    Amazon\CreatorsAPI\v1\com\amazon\creators\api\DefaultApi:
+        factory: ['@App\Creators\DefaultApiFactory', 'create']
+
+    App\Creators\SdkCreatorsClient:
+        arguments:
+            $api: '@Amazon\CreatorsAPI\v1\com\amazon\creators\api\DefaultApi'
+            $partnerTag: '%env(AMAZON_PARTNER_TAG)%'
+            $marketplace: '%env(CREATORS_MARKETPLACE)%'
+            $cap: null
+
+    # The pipeline depends on the interface, not the SDK.
+    DealPromoter\Shared\Creators\CreatorsClient: '@App\Creators\SdkCreatorsClient'
+
 when@test:
     services:
         # Expose the storage seam to the test container so the integration test
