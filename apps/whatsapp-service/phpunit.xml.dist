@@ -14,6 +14,7 @@
         <server name="APP_DEBUG" value="1"/>
         <server name="APP_SECRET" value="test_secret"/>
         <server name="SHELL_VERBOSITY" value="-1"/>
+        <server name="WHATSAPP_INTERNAL_KEY" value="test-internal-key" force="true"/>
         <!--
             Pin the kernel environment in $_ENV too. The compose `.env` injects
             APP_ENV into the container's real environment; KernelTestCase reads

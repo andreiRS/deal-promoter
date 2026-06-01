@@ -17,12 +17,18 @@ use Symfony\Component\Routing\Attribute\Route;
  * GET  /channels  — proxies WahaClient::listOwnedChannels; 502 on transport failure.
  * POST /ui/send   — the human send path. Guards chatId + text SERVER-SIDE before any
  *                   WAHA call; routes through WahaClient::sendText on success.
- *                   NOT gated (no X-Internal-Key) — that belongs to slice 4's /send.
+ *                   NOT gated (no X-Internal-Key).
+ * POST /send      — machine-facing, gated send path. Requires X-Internal-Key header;
+ *                   401 is returned BEFORE guards and BEFORE any WAHA call when the
+ *                   key is missing or wrong. Shares the same guard + delivery path as
+ *                   /ui/send — exactly one WAHA delivery path in the codebase.
  */
 final class ChannelController extends AbstractController
 {
-    public function __construct(private readonly WahaClient $waha)
-    {
+    public function __construct(
+        private readonly WahaClient $waha,
+        private readonly string $internalKey,
+    ) {
     }
 
     #[Route('/channels', name: 'channels', methods: ['GET'])]
@@ -43,6 +49,35 @@ final class ChannelController extends AbstractController
         $chatId = $body['chatId'] ?? '';
         $text = trim($body['text'] ?? '');
 
+        return $this->deliver($chatId, $text);
+    }
+
+    #[Route('/send', name: 'send', methods: ['POST'])]
+    public function send(Request $request): JsonResponse
+    {
+        // 401 fires BEFORE guards and BEFORE any WAHA call.
+        // Fail-closed: empty internalKey (misconfigured gateway) → always 401.
+        $providedKey = $request->headers->get('X-Internal-Key', '');
+        if ('' === $this->internalKey || $providedKey !== $this->internalKey) {
+            return new JsonResponse(['error' => 'Unauthorized'], Response::HTTP_UNAUTHORIZED);
+        }
+
+        /** @var array{chatId?: string, text?: string} $body */
+        $body = json_decode((string) $request->getContent(), true, 512, \JSON_THROW_ON_ERROR);
+        $chatId = $body['chatId'] ?? '';
+        $text = trim($body['text'] ?? '');
+
+        return $this->deliver($chatId, $text);
+    }
+
+    /**
+     * Single WAHA delivery path shared by /ui/send and /send.
+     *
+     * Applies guardSend (400 on failure), then calls WahaClient::sendText (502 on
+     * transport failure). Both routes must go through here — no duplicated WAHA call.
+     */
+    private function deliver(string $chatId, string $text): JsonResponse
+    {
         $error = $this->guardSend($chatId, $text);
         if (null !== $error) {
             return new JsonResponse(['error' => $error], Response::HTTP_BAD_REQUEST);
@@ -62,8 +97,7 @@ final class ChannelController extends AbstractController
 
     /**
      * Shared guard for chatId and text. Returns an error string on failure, null
-     * on success. Extracted so slice 4's gated `/send` can reuse the exact same
-     * validation without duplicating it.
+     * on success. Used by deliver() which is called by both /ui/send and /send.
      */
     private function guardSend(string $chatId, string $text): ?string
     {

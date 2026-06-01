@@ -4,6 +4,9 @@ parameters:
     env(WAHA_URL): 'http://waha:3000'
     env(WAHA_API_KEY): ''
     env(WAHA_SESSION): 'default'
+    # Gateway-level trust gate (ADR 0002). Empty default → every request is 401
+    # (fail-closed: a misconfigured gateway never accepts unauthenticated sends).
+    env(WHATSAPP_INTERNAL_KEY): ''
 
 services:
     _defaults:
@@ -24,3 +27,9 @@ services:
             $baseUrl: '%env(WAHA_URL)%'
             $apiKey: '%env(WAHA_API_KEY)%'
             $session: '%env(WAHA_SESSION)%'
+
+    # Explicit def so $internalKey can be injected alongside the autowired $waha.
+    App\Controller\ChannelController:
+        arguments:
+            $waha: '@App\Waha\WahaClient'
+            $internalKey: '%env(WHATSAPP_INTERNAL_KEY)%'

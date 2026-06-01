@@ -15,6 +15,8 @@ use Symfony\Component\HttpClient\Response\MockResponse;
  * GET /channels  — lists owned channels via WahaClient::listOwnedChannels.
  * POST /ui/send  — open human send path; guards chatId and text BEFORE any WAHA
  *                  call; routes through WahaClient::sendText on success.
+ * POST /send     — machine-facing gated send; requires X-Internal-Key header, then
+ *                  shares the same guard + delivery path as /ui/send.
  */
 final class ChannelControllerTest extends WebTestCase
 {
@@ -162,6 +164,138 @@ final class ChannelControllerTest extends WebTestCase
             [],
             [],
             ['CONTENT_TYPE' => 'application/json'],
+            json_encode(['chatId' => 'abc@newsletter', 'text' => 'Hello!'], \JSON_THROW_ON_ERROR),
+        );
+
+        self::assertResponseStatusCodeSame(502);
+        /** @var array<string, mixed> $data */
+        $data = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
+        self::assertArrayHasKey('error', $data);
+    }
+
+    // -------------------------------------------------------------------------
+    // POST /send — key gate (401 before guards and before any WAHA call)
+    // -------------------------------------------------------------------------
+
+    public function testSendRejects401WhenKeyIsMissing(): void
+    {
+        $client = self::createClient();
+        // Zero mock responses: any WAHA call would throw.
+        $this->mockWaha();
+
+        $client->request(
+            'POST',
+            '/send',
+            [],
+            [],
+            ['CONTENT_TYPE' => 'application/json'],
+            json_encode(['chatId' => 'abc@newsletter', 'text' => 'Hello'], \JSON_THROW_ON_ERROR),
+        );
+
+        self::assertResponseStatusCodeSame(401);
+    }
+
+    public function testSendRejects401WhenKeyIsWrong(): void
+    {
+        $client = self::createClient();
+        $this->mockWaha();
+
+        $client->request(
+            'POST',
+            '/send',
+            [],
+            [],
+            ['HTTP_X_INTERNAL_KEY' => 'wrong-key', 'CONTENT_TYPE' => 'application/json'],
+            json_encode(['chatId' => 'abc@newsletter', 'text' => 'Hello'], \JSON_THROW_ON_ERROR),
+        );
+
+        self::assertResponseStatusCodeSame(401);
+    }
+
+    // -------------------------------------------------------------------------
+    // POST /send — guards (after key passes)
+    // -------------------------------------------------------------------------
+
+    public function testSendRejects400OnNonNewsletterChatId(): void
+    {
+        $client = self::createClient();
+        $this->mockWaha();
+
+        $client->request(
+            'POST',
+            '/send',
+            [],
+            [],
+            ['HTTP_X_INTERNAL_KEY' => 'test-internal-key', 'CONTENT_TYPE' => 'application/json'],
+            json_encode(['chatId' => 'abc@g.us', 'text' => 'Hello'], \JSON_THROW_ON_ERROR),
+        );
+
+        self::assertResponseStatusCodeSame(400);
+        /** @var array<string, string> $data */
+        $data = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
+        self::assertArrayHasKey('error', $data);
+        self::assertSame('chatId must be present and end with @newsletter', $data['error']);
+    }
+
+    public function testSendRejects400OnEmptyText(): void
+    {
+        $client = self::createClient();
+        $this->mockWaha();
+
+        $client->request(
+            'POST',
+            '/send',
+            [],
+            [],
+            ['HTTP_X_INTERNAL_KEY' => 'test-internal-key', 'CONTENT_TYPE' => 'application/json'],
+            json_encode(['chatId' => 'abc@newsletter', 'text' => '   '], \JSON_THROW_ON_ERROR),
+        );
+
+        self::assertResponseStatusCodeSame(400);
+        /** @var array<string, string> $data */
+        $data = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
+        self::assertArrayHasKey('error', $data);
+        self::assertSame('text must be non-empty', $data['error']);
+    }
+
+    // -------------------------------------------------------------------------
+    // POST /send — happy path + WAHA failure
+    // -------------------------------------------------------------------------
+
+    public function testSendCallsWahaAndReturnsOk(): void
+    {
+        $client = self::createClient();
+        $wahaResponse = json_encode(['id' => 'msg-2'], \JSON_THROW_ON_ERROR);
+        $this->mockWaha(
+            new MockResponse($wahaResponse, ['response_headers' => ['Content-Type' => 'application/json']]),
+        );
+
+        $client->request(
+            'POST',
+            '/send',
+            [],
+            [],
+            ['HTTP_X_INTERNAL_KEY' => 'test-internal-key', 'CONTENT_TYPE' => 'application/json'],
+            json_encode(['chatId' => 'abc@newsletter', 'text' => 'Hello!'], \JSON_THROW_ON_ERROR),
+        );
+
+        self::assertResponseIsSuccessful();
+        /** @var array<string, mixed> $data */
+        $data = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
+        self::assertTrue($data['ok']);
+    }
+
+    public function testSendReturns502WhenWahaFails(): void
+    {
+        $client = self::createClient();
+        $this->mockWaha(new MockResponse('server error', ['http_code' => 500]));
+
+        $client->request(
+            'POST',
+            '/send',
+            [],
+            [],
+            ['HTTP_X_INTERNAL_KEY' => 'test-internal-key', 'CONTENT_TYPE' => 'application/json'],
             json_encode(['chatId' => 'abc@newsletter', 'text' => 'Hello!'], \JSON_THROW_ON_ERROR),
         );
 
