@@ -25,3 +25,6 @@
 
 # Node (experiments only)
 /experiments/node_modules/
+
+# Playwright CLI scratch artifacts
+.playwright-cli/

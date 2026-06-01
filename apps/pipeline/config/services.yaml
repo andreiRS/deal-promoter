@@ -87,12 +87,11 @@ services:
     DealPromoter\Shared\Keepa\KeepaDiscovery: '@DealPromoter\Shared\Keepa\KeepaClient'
 
     # --- Cycle pagination (P7) ---
-    # Attestation is rare, so a cycle walks several /deal pages until it has
-    # enough attested deals. Tune the volume-vs-cost dial here.
+    # A cycle sweeps a fixed batch of /deal pages and records every price-valid
+    # survivor; attestation is a per-deal marker. Tune the volume-vs-cost dial here.
     App\Command\RunCycleCommand:
         arguments:
-            $maxPages: 3 # hard ceiling on /deal pages fetched per cycle (cost bound)
-            $targetAttestedDeals: 5 # stop paging once this many attested deals are recorded
+            $pagesPerCycle: 2 # number of /deal pages fetched per cycle
 
     # --- Publish channel seam (P9 / slice 5) ---
     # WahaChannelPublisher delivers to the WhatsApp channel via the slice-4 gateway.

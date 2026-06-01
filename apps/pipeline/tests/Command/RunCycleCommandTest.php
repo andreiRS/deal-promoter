@@ -6,7 +6,6 @@ namespace App\Tests\Command;
 
 use App\Command\RunCycleCommand;
 use App\Entity\CycleRun;
-use App\Entity\FoundDeal;
 use DealPromoter\Shared\AlreadyPosted\AlreadyPostedGuard;
 use DealPromoter\Shared\Creators\CreatorsClient;
 use DealPromoter\Shared\Creators\LiveSnapshot;
@@ -120,9 +119,9 @@ final class RunCycleCommandTest extends KernelTestCase
 
         // Pick two known surviving ASINs (golden set) and return snapshots for them
         // only — a third surviving ASIN with no snapshot must be skipped silently.
-        // A is Amazon-attested (dealDetails + WAS_PRICE) and becomes a found deal;
-        // B is a valid snapshot with NO attestation, so the Strict dial counts it
-        // as snapshotted but does not record it as a deal.
+        // A is Amazon-attested (dealDetails + WAS_PRICE); B is a valid snapshot with
+        // NO attestation. Both are price-valid survivors, so both are recorded as
+        // found deals — attestation only marks A, it no longer gates recording.
         $snapshotA = new LiveSnapshot(
             asin: '019085894X',
             priceCents: 1234,
@@ -158,15 +157,14 @@ final class RunCycleCommandTest extends KernelTestCase
         self::assertSame(Command::SUCCESS, $exit);
         self::assertSame(1, $this->countCycleRuns());
 
-        // Verbose output exposes per-product attestation state: A is recorded,
-        // the unattested B is shown snapshotted-but-skipped (the visibility the
-        // Strict dial otherwise discards).
+        // Verbose output exposes per-product attestation state: A is attested,
+        // B is unattested — both recorded, the marker just differs.
         $display = $tester->getDisplay();
         self::assertStringContainsString('Live Snapshot:', $display);
         self::assertStringContainsString('019085894X', $display);
         self::assertStringContainsString('attested', $display);
         self::assertStringContainsString('B0010AH4BW', $display);
-        self::assertStringContainsString('skipped', $display);
+        self::assertStringContainsString('unattested', $display);
 
         // Reload the single CycleRun from the DB.
         $cycleRun = $this->em->getRepository(CycleRun::class)->findOneBy([]);
@@ -175,21 +173,22 @@ final class RunCycleCommandTest extends KernelTestCase
         self::assertSame(150, $cycleRun->getRawCount());
         // 93 golden survivors clear Pre-filter + (empty) Already-Posted Guard.
         self::assertSame(93, $cycleRun->getSurvivingCount());
-        // Both survivors were snapshotted (Price Validity), but only the attested
-        // one becomes a found deal.
+        // Both survivors were snapshotted (Price Validity) and both are recorded.
         self::assertSame(2, $cycleRun->getSnapshottedCount());
         self::assertNotNull($cycleRun->getFinishedAt());
 
         $deals = $cycleRun->getFoundDeals();
-        self::assertCount(1, $deals);
+        self::assertCount(2, $deals);
 
         $byAsin = [];
         foreach ($deals as $deal) {
             $byAsin[$deal->getAsin()] = $deal;
         }
-        // A is attested → recorded; B is unattested → snapshotted but not recorded.
+        // Both price-valid survivors are recorded; attestation marks A, not B.
         self::assertArrayHasKey('019085894X', $byAsin);
-        self::assertArrayNotHasKey('B0010AH4BW', $byAsin);
+        self::assertArrayHasKey('B0010AH4BW', $byAsin);
+        self::assertTrue($byAsin['019085894X']->hasAmazonAttestation());
+        self::assertFalse($byAsin['B0010AH4BW']->hasAmazonAttestation());
 
         $a = $byAsin['019085894X'];
         // Money is integer cents from the snapshot.
@@ -226,11 +225,11 @@ final class RunCycleCommandTest extends KernelTestCase
         self::assertFalse(property_exists($a, 'verdict'));
     }
 
-    public function testPaginatesToTheNextPageWhenAPageYieldsNoAttestedDeals(): void
+    public function testPaginatesAcrossPagesAndRecordsEverySurvivor(): void
     {
-        // Page 0's only survivor is price-valid but UNATTESTED (no found deal);
-        // page 1's survivor is attested. With the target unmet after page 0, the
-        // Cycle must walk to page 1 to record the deal.
+        // One survivor per page; the per-page yield is below the target, so the
+        // Cycle walks from page 0 to page 1. Page 0's survivor is unattested and
+        // page 1's is attested — both are recorded regardless, in page order.
         $discovery = new FakeKeepaDiscovery([
             new DealPage([$this->passingCandidate('PAGE0AAAAA')], new TokenMeter(60, 5, 5, 0)),
             new DealPage([$this->passingCandidate('PAGE1BBBBB')], new TokenMeter(60, 5, 5, 0)),
@@ -250,17 +249,19 @@ final class RunCycleCommandTest extends KernelTestCase
         $cycleRun = $this->em->getRepository(CycleRun::class)->findOneBy([]);
         self::assertInstanceOf(CycleRun::class, $cycleRun);
 
-        // Both pages were searched and contributed to the funnel; only page 1's
-        // attested survivor became a found deal.
+        // Both pages were searched and contributed to the funnel; both survivors
+        // became found deals.
         self::assertSame(2, $cycleRun->getRawCount());
         self::assertSame(2, $cycleRun->getSurvivingCount());
         self::assertSame(2, $cycleRun->getSnapshottedCount());
 
-        $asins = array_map(
-            static fn (FoundDeal $d): string => $d->getAsin(),
-            $cycleRun->getFoundDeals()->toArray(),
-        );
-        self::assertSame(['PAGE1BBBBB'], $asins);
+        $byAsin = [];
+        foreach ($cycleRun->getFoundDeals() as $deal) {
+            $byAsin[$deal->getAsin()] = $deal;
+        }
+        self::assertSame(['PAGE0AAAAA', 'PAGE1BBBBB'], array_keys($byAsin));
+        self::assertFalse($byAsin['PAGE0AAAAA']->hasAmazonAttestation());
+        self::assertTrue($byAsin['PAGE1BBBBB']->hasAmazonAttestation());
 
         // Verbose output shows the walk reached page 1.
         self::assertStringContainsString('page 1', $tester->getDisplay());

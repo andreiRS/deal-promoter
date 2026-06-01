@@ -275,4 +275,16 @@ class FoundDeal implements PublishableDeal
     {
         $this->publishRequestedAt = $at;
     }
+
+    /**
+     * Amazon's own evidence that the discount is real: a `dealDetails` badge/window
+     * OR a `savingBasis` of type `WAS_PRICE`. Mirrors LiveSnapshot::hasAmazonAttestation
+     * over the columns snapshotted onto this row. A `LIST_PRICE` basis is seller-set
+     * MSRP and does NOT count. Surfaced as a marker on the Review page; no longer gates
+     * recording.
+     */
+    public function hasAmazonAttestation(): bool
+    {
+        return true === $this->hasDealDetails || 'WAS_PRICE' === $this->savingBasisType;
+    }
 }

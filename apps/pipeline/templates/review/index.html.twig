@@ -26,7 +26,7 @@
         {% else %}
             <div class="deals">
                 {% for deal in cycle.foundDeals %}
-                    <article class="deal-card">
+                    <article class="deal-card{% if deal.hasAmazonAttestation %} deal-card--attested{% endif %}">
                         <div class="deal-head">
                             {% if deal.imageUrl %}
                                 <img class="deal-thumb" src="{{ deal.imageUrl }}" alt="{{ deal.title }}">
@@ -45,8 +45,11 @@
                             </div>
                         </div>
 
-                        {% if deal.keepaDropPct is not null or deal.amazonSavingsPct is not null %}
+                        {% if deal.hasAmazonAttestation or deal.keepaDropPct is not null or deal.amazonSavingsPct is not null %}
                             <div class="badges">
+                                {% if deal.hasAmazonAttestation %}
+                                    <span class="badge badge--attested" title="Amazon's own evidence the discount is real (deal badge or WAS_PRICE)">&check; Amazon-attested</span>
+                                {% endif %}
                                 {% if deal.keepaDropPct is not null %}
                                     <span class="badge">Keepa &minus;{{ deal.keepaDropPct }}%</span>
                                 {% endif %}

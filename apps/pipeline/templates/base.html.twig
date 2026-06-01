@@ -81,6 +81,7 @@
             border-radius: 12px;
             padding: 1rem;
         }
+        .deal-card--attested { border-left: 3px solid var(--success); }
         .deal-head { display: flex; gap: 0.85rem; align-items: flex-start; }
         .deal-thumb {
             width: 88px;
@@ -116,6 +117,12 @@
             border: 1px solid var(--highlight);
             color: var(--highlight);
             white-space: nowrap;
+        }
+        /* Amazon attestation: Amazon's own evidence the discount is real. */
+        .badge--attested {
+            border-color: var(--success);
+            color: var(--success);
+            background: color-mix(in srgb, var(--success) 12%, transparent);
         }
 
         /* Actions */

@@ -44,11 +44,10 @@ final class RunCycleCommand extends Command
     private const int KEEPA_PAGE_COST = 5;
 
     /**
-     * @param int $maxPages            hard ceiling on `/deal` pages fetched per Cycle,
-     *                                 independent of $targetAttestedDeals (cost bound)
-     * @param int $targetAttestedDeals stop paging once this many Amazon-attested deals
-     *                                 are recorded; attestation is rare (~1/10), so a
-     *                                 page may yield none and we walk to the next
+     * @param int $pagesPerCycle number of Keepa `/deal` pages fetched per Cycle.
+     *                           Every price-valid survivor across those pages is
+     *                           recorded; Amazon attestation is a per-deal marker,
+     *                           not a record gate.
      */
     public function __construct(
         private readonly KeepaDiscovery $discovery,
@@ -57,8 +56,7 @@ final class RunCycleCommand extends Command
         private readonly CreatorsClient $creators,
         private readonly EntityManagerInterface $entityManager,
         private readonly LockFactory $lockFactory,
-        private readonly int $maxPages = 3,
-        private readonly int $targetAttestedDeals = 5,
+        private readonly int $pagesPerCycle = 2,
     ) {
         parent::__construct();
     }
@@ -100,15 +98,9 @@ final class RunCycleCommand extends Command
         $seenAsins = [];
         $pagesFetched = 0;
 
-        // Walk Keepa `/deal` pages until we have enough attested deals or hit the
-        // page ceiling. Attestation is rare (~1/10), so an early page often yields
-        // none; we step to the next (deeper, less-discounted) page rather than give
-        // up. The CycleRun funnel counts accumulate across the pages we searched.
-        for ($page = 0; $page < $this->maxPages; ++$page) {
-            if (\count($cycleRun->getFoundDeals()) >= $this->targetAttestedDeals) {
-                break;
-            }
-
+        // Sweep a fixed batch of Keepa `/deal` pages. The CycleRun funnel counts
+        // accumulate across the pages we searched.
+        for ($page = 0; $page < $this->pagesPerCycle; ++$page) {
             // 2. Discover one page of raw candidates.
             $dealPage = $this->discovery->fetchDealPage($page);
             ++$pagesFetched;
@@ -156,9 +148,10 @@ final class RunCycleCommand extends Command
                 OutputInterface::VERBOSITY_VERBOSE,
             );
 
-            // 5. Record one FoundDeal per attested deal (Strict dial). A
-            //    price-valid-but-unattested snapshot is counted in
-            //    snapshottedCount but not recorded.
+            // 5. Record one FoundDeal per price-valid survivor. Amazon attestation
+            //    (dealDetails / WAS_PRICE) no longer gates recording — every
+            //    snapshotted survivor is recorded and attestation rides along as a
+            //    per-deal marker surfaced on the Review page.
             foreach ($survivors as $candidate) {
                 $seenAsins[$candidate->asin] = true;
                 $snapshot = $snapshots[$candidate->asin] ?? null;
@@ -167,10 +160,7 @@ final class RunCycleCommand extends Command
                 }
                 ++$snapshottedCount;
 
-                $attested = $snapshot->hasAmazonAttestation();
-                if ($attested) {
-                    $cycleRun->addFoundDeal(FoundDeal::fromSnapshot($candidate, $snapshot, $startedAt));
-                }
+                $cycleRun->addFoundDeal(FoundDeal::fromSnapshot($candidate, $snapshot, $startedAt));
 
                 $snapshotRows[] = [
                     $snapshot->asin,
@@ -178,16 +168,12 @@ final class RunCycleCommand extends Command
                     $snapshot->availability ?? '—',
                     $snapshot->savingBasisType ?? '—',
                     $snapshot->hasDealDetails ? 'yes' : 'no',
-                    $attested ? '<info>✓ attested</info>' : '<comment>skipped</comment>',
+                    $snapshot->hasAmazonAttestation() ? '<info>✓ attested</info>' : '<comment>— unattested</comment>',
                 ];
-
-                if (\count($cycleRun->getFoundDeals()) >= $this->targetAttestedDeals) {
-                    break; // target reached mid-page
-                }
             }
 
             // Stop before a page we cannot fund. The live meter rode in on this
-            // response; on a cache hit it is stale, but $maxPages still bounds us.
+            // response; on a cache hit it is stale, but $pagesPerCycle still bounds us.
             if ($dealPage->meter->tokensLeft < self::KEEPA_PAGE_COST) {
                 $io->writeln(
                     \sprintf('<info>Keepa budget:</info> %d tokens left (< %d) — stopping pagination.', $dealPage->meter->tokensLeft, self::KEEPA_PAGE_COST),
@@ -197,7 +183,13 @@ final class RunCycleCommand extends Command
             }
         }
 
-        $attestedCount = \count($cycleRun->getFoundDeals());
+        $foundCount = \count($cycleRun->getFoundDeals());
+        $attestedCount = 0;
+        foreach ($cycleRun->getFoundDeals() as $deal) {
+            if ($deal->hasAmazonAttestation()) {
+                ++$attestedCount;
+            }
+        }
         $this->reportSnapshots($io, $snapshotRows);
 
         $cycleRun->setRawCount($rawCount);
@@ -209,11 +201,12 @@ final class RunCycleCommand extends Command
         $this->entityManager->flush();
 
         $io->success(\sprintf(
-            'Cycle complete: %d page(s) searched — %d raw, %d surviving, %d snapshotted, %d attested deals recorded.',
+            'Cycle complete: %d page(s) searched — %d raw, %d surviving, %d snapshotted, %d deals recorded (%d Amazon-attested).',
             $pagesFetched,
             $rawCount,
             $survivingCount,
             $snapshottedCount,
+            $foundCount,
             $attestedCount,
         ));
 
