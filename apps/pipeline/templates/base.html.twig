@@ -4,13 +4,169 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}Deal Review{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.bunny.net">
+    <link href="https://fonts.bunny.net/css?family=inter:400,600,700|jetbrains-mono:400" rel="stylesheet">
     <style>
-        body { font-family: system-ui, sans-serif; margin: 1.5rem; color: #1a1a1a; }
-        table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
-        th, td { border: 1px solid #ddd; padding: 0.4rem 0.6rem; text-align: left; vertical-align: top; }
-        th { background: #f5f5f5; }
-        img { max-width: 64px; height: auto; }
-        .empty { color: #666; font-style: italic; }
+        :root {
+            /* Dark mode (default) */
+            --bg:        #1e1e1e;
+            --surface:   #252525;
+            --border:    #333333;
+            --text:      #ffffff;
+            --muted:     #9a9a9a;
+
+            --success:   #4caf7d;
+            --info:      #6b9bd2;
+            --danger:    #e05c4b;
+            --highlight: #c9970a;
+        }
+
+        @media (prefers-color-scheme: light) {
+            :root {
+                --bg:        #f5f0e8;
+                --surface:   #ede8df;
+                --border:    #ccc6bb;
+                --text:      #1a1a1a;
+                --muted:     #6a655c;
+
+                --success:   #3a8c63;
+                --info:      #4f7cb0;
+                --danger:    #c0432f;
+                --highlight: #a87c08;
+            }
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 1.5rem;
+            background: var(--bg);
+            color: var(--text);
+        }
+
+        h1 { font-weight: 700; font-size: 1.6rem; margin: 0 0 0.25rem; }
+        a { color: var(--info); }
+
+        .intro { color: var(--muted); margin: 0 0 1.5rem; }
+        .empty { color: var(--muted); font-style: italic; }
+
+        /* Flash messages */
+        .flash-success,
+        .flash-error {
+            border: 1px solid;
+            border-radius: 8px;
+            padding: 0.6rem 0.9rem;
+            margin: 0 0 1rem;
+            font-weight: 600;
+        }
+        .flash-success { border-color: var(--success); color: var(--success); }
+        .flash-error   { border-color: var(--danger);  color: var(--danger); }
+
+        /* Deal cards */
+        .deals {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+            gap: 1rem;
+            align-items: start;
+        }
+        .deal-card {
+            display: flex;
+            flex-direction: column;
+            gap: 0.85rem;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1rem;
+        }
+        .deal-head { display: flex; gap: 0.85rem; align-items: flex-start; }
+        .deal-thumb {
+            width: 88px;
+            height: 88px;
+            flex-shrink: 0;
+            object-fit: contain;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+        .deal-thumb--empty {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--muted);
+        }
+        .deal-headings { min-width: 0; }
+        .deal-title {
+            font-size: 1rem;
+            font-weight: 600;
+            line-height: 1.35;
+            margin: 0 0 0.35rem;
+        }
+        .deal-price { font-size: 1.3rem; font-weight: 700; }
+
+        /* Headline discount signals */
+        .badges { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+        .badge {
+            font-size: 0.8rem;
+            font-weight: 600;
+            padding: 0.15rem 0.5rem;
+            border-radius: 999px;
+            border: 1px solid var(--highlight);
+            color: var(--highlight);
+            white-space: nowrap;
+        }
+
+        /* Actions */
+        .deal-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.6rem;
+            align-items: center;
+            margin-top: auto;
+        }
+        .btn {
+            font: inherit;
+            font-weight: 600;
+            border: 1px solid transparent;
+            border-radius: 8px;
+            padding: 0.5rem 1rem;
+            cursor: pointer;
+        }
+        .btn-publish { background: var(--info); color: #fff; }
+        .btn-publish:hover { filter: brightness(1.08); }
+        .btn:focus-visible,
+        a:focus-visible,
+        summary:focus-visible {
+            outline: 2px solid var(--info);
+            outline-offset: 2px;
+        }
+        .link-open { font-weight: 600; }
+        .requested { color: var(--success); font-weight: 600; font-size: 0.9rem; }
+
+        /* Secondary signals disclosure */
+        .more { border-top: 1px solid var(--border); padding-top: 0.6rem; }
+        .more > summary {
+            cursor: pointer;
+            color: var(--muted);
+            font-size: 0.85rem;
+        }
+        .signals {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 0.25rem 0.75rem;
+            margin: 0.6rem 0 0;
+            font-size: 0.85rem;
+        }
+        .signals dt { color: var(--muted); }
+        .signals dd { margin: 0; font-family: 'JetBrains Mono', monospace; }
+        .signals dd.bad { color: var(--danger); font-weight: 600; }
+
+        @media (max-width: 640px) {
+            body { padding: 1rem; }
+            .deals { grid-template-columns: 1fr; }
+        }
     </style>
 </head>
 <body>
