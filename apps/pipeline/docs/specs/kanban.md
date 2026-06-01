@@ -8,8 +8,6 @@ All slices are **unattended** (decisions were resolved up front; the only deferr
 
 ### 📋 To Do
 
-- [ ] **P2** — Postgres + Doctrine + storage interface + schema
-- [ ] **P5** — Creators SDK + `CreatorsClient` + Live Snapshot
 - [ ] **P6** — Already-Posted Guard
 - [ ] **P7** — `app:run-cycle` orchestration + run-lock + record
 - [ ] **P8** — Review web page
@@ -24,6 +22,8 @@ _(none)_
 - [x] **P1** — Monorepo + Docker skeleton (`70dc85b`)
 - [x] **P3** — Keepa client (hand-rolled) (`7bd7df3`, baseline QA fix `cc1b35a`)
 - [x] **P4** — Pre-filter: Criteria + Outlier Guards (`3b83e93`)
+- [x] **P2** — Postgres + Doctrine + storage interface + schema (`3996f2f`)
+- [x] **P5** — Creators SDK + `CreatorsClient` + Live Snapshot
 
 ## Dependency order
 

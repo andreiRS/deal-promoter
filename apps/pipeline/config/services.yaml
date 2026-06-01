@@ -20,6 +20,16 @@ services:
     # Bind the swappable persistence seam to its Doctrine-backed implementation.
     DealPromoter\Shared\Storage\RecordedPriceHistory: '@App\Storage\DoctrineRecordedPriceHistory'
 
+    # --- Already-Posted Guard (P6) ---
+    # The guard lives in packages/shared and is not covered by the App\ glob.
+    # Register it explicitly so the container can construct it (P7 will consume it).
+    DealPromoter\Shared\AlreadyPosted\AlreadyPostedGuard: ~
+
+    # Default Repost Policy: a posted ASIN is always suppressed.
+    # Bind the interface so the guard autowires the policy.
+    DealPromoter\Shared\AlreadyPosted\RepostPolicy: '@DealPromoter\Shared\AlreadyPosted\NeverRepostPolicy'
+    DealPromoter\Shared\AlreadyPosted\NeverRepostPolicy: ~
+
     # --- Live Snapshot (Amazon CreatorsAPI) ---
     # The SDK's DefaultApi is built by a factory from plain env credentials.
     # The live HTTP call is a [manual] smoke; tests inject a mocked DefaultApi.
@@ -49,4 +59,9 @@ when@test:
         # (No consumer exists yet, so the alias would otherwise be inlined away.)
         DealPromoter\Shared\Storage\RecordedPriceHistory:
             alias: App\Storage\DoctrineRecordedPriceHistory
+            public: true
+
+        # Expose the Already-Posted Guard so integration tests can verify it
+        # wires end-to-end through the real Doctrine storage.
+        DealPromoter\Shared\AlreadyPosted\AlreadyPostedGuard:
             public: true
