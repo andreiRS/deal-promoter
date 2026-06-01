@@ -6,6 +6,11 @@ framework:
         log: true
     # Registers the HttpClientInterface autowiring alias used by the Keepa client.
     http_client: ~
+    # Dedicated pool for cached Keepa /deal page responses (CachingKeepaDiscovery).
+    cache:
+        pools:
+            keepa.cache_pool:
+                adapter: cache.app
     # Sessions are required for flash messages (Publish button, P9).
     session:
         handler_id: null

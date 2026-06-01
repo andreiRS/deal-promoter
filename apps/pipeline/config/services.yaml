@@ -67,6 +67,16 @@ services:
             $apiKey: '%env(KEEPA_API_KEY)%'
             $domain: '%env(int:KEEPA_DOMAIN)%'
 
+    # Cache /deal page responses so repeat cycles skip pages already fetched
+    # (no re-spent tokens, no re-walking already-filtered products). Decorates the
+    # real client; the KeepaDiscovery alias below then resolves to this wrapper.
+    App\Keepa\CachingKeepaDiscovery:
+        decorates: DealPromoter\Shared\Keepa\KeepaClient
+        arguments:
+            $inner: '@.inner'
+            $cache: '@keepa.cache_pool'
+            $ttlSeconds: 3600 # 1h freshness-vs-cost dial: within the hour repeat pages are free; after it, top pages refetch to catch new deals
+
     # The Cycle depends on the discovery seam, not the concrete client.
     DealPromoter\Shared\Keepa\KeepaDiscovery: '@DealPromoter\Shared\Keepa\KeepaClient'
 
