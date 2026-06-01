@@ -267,6 +267,59 @@ final class RunCycleCommandTest extends KernelTestCase
         self::assertStringContainsString('page 1', $tester->getDisplay());
     }
 
+    public function testResumesPagingWhereTheLastCycleStopped(): void
+    {
+        // A feed four pages deep (0..3), empty beyond. pagesPerCycle is 2, so two
+        // back-to-back cycles must cover pages 0,1 then 2,3 — not re-scan 0,1.
+        $discovery = new RecordingKeepaDiscovery([
+            new DealPage([$this->passingCandidate('PAGE00AAAA')], new TokenMeter(60, 5, 5, 0)),
+            new DealPage([$this->passingCandidate('PAGE01AAAA')], new TokenMeter(60, 5, 5, 0)),
+            new DealPage([$this->passingCandidate('PAGE02AAAA')], new TokenMeter(60, 5, 5, 0)),
+            new DealPage([$this->passingCandidate('PAGE03AAAA')], new TokenMeter(60, 5, 5, 0)),
+        ]);
+        $creators = new FakeCreatorsClient([
+            'PAGE00AAAA' => $this->snapshot('PAGE00AAAA', attested: true),
+            'PAGE01AAAA' => $this->snapshot('PAGE01AAAA', attested: true),
+            'PAGE02AAAA' => $this->snapshot('PAGE02AAAA', attested: true),
+            'PAGE03AAAA' => $this->snapshot('PAGE03AAAA', attested: true),
+        ]);
+        $preFilter = new PreFilter(new Criteria(), new GuardThresholds());
+
+        // Cycle 1: fresh DB, cursor starts at 0, sweeps pages 0 and 1.
+        $this->command($discovery, $creators, $preFilter)->execute([]);
+        // Cycle 2: reads the cursor left by Cycle 1 and resumes at page 2.
+        $this->command($discovery, $creators, $preFilter)->execute([]);
+
+        // Exactly pages 0,1,2,3 were requested, in order — no page re-scanned.
+        self::assertSame([0, 1, 2, 3], $discovery->requestedPages);
+
+        $runs = $this->em->getRepository(CycleRun::class)->findBy([], ['id' => 'ASC']);
+        self::assertCount(2, $runs);
+        // Cycle 1 leaves the cursor at page 2; Cycle 2 advances it to page 4.
+        self::assertSame(2, $runs[0]->getNextStartPage());
+        self::assertSame(4, $runs[1]->getNextStartPage());
+    }
+
+    public function testCursorResetsToZeroWhenTheSweepRunsOffTheEndOfTheFeed(): void
+    {
+        // Page 0 has deals, page 1 is the end of the feed (empty). The sweep stops
+        // there and the cursor wraps back to 0 for the next Cycle.
+        $discovery = new RecordingKeepaDiscovery([
+            new DealPage([$this->passingCandidate('ENDPAGE0AA')], new TokenMeter(60, 5, 5, 0)),
+        ]);
+        $creators = new FakeCreatorsClient([
+            'ENDPAGE0AA' => $this->snapshot('ENDPAGE0AA', attested: true),
+        ]);
+
+        $this->command($discovery, $creators, new PreFilter(new Criteria(), new GuardThresholds()))->execute([]);
+
+        self::assertSame([0, 1], $discovery->requestedPages);
+
+        $run = $this->em->getRepository(CycleRun::class)->findOneBy([]);
+        self::assertInstanceOf(CycleRun::class, $run);
+        self::assertSame(0, $run->getNextStartPage());
+    }
+
     private function passingCandidate(string $asin): Candidate
     {
         // Values mirror PreFilterTest::passingCandidate — they clear the default
@@ -369,6 +422,27 @@ final readonly class FakeKeepaDiscovery implements KeepaDiscovery
 
     public function fetchDealPage(int $page = 0): DealPage
     {
+        return $this->pages[$page] ?? new DealPage([], new TokenMeter(60, 5, 5, 0));
+    }
+}
+
+final class RecordingKeepaDiscovery implements KeepaDiscovery
+{
+    /** @var list<int> the page indices requested, in call order */
+    public array $requestedPages = [];
+
+    /**
+     * @param list<DealPage> $pages one DealPage per page index; requests beyond
+     *                              the list return an empty page (end of feed)
+     */
+    public function __construct(private readonly array $pages)
+    {
+    }
+
+    public function fetchDealPage(int $page = 0): DealPage
+    {
+        $this->requestedPages[] = $page;
+
         return $this->pages[$page] ?? new DealPage([], new TokenMeter(60, 5, 5, 0));
     }
 }

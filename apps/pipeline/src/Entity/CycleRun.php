@@ -38,6 +38,15 @@ class CycleRun
     private int $snapshottedCount = 0;
 
     /**
+     * The Keepa `/deal` page index the *next* Cycle should resume from, so cycles
+     * page deeper across runs instead of re-scanning page 0 each time. Advances by
+     * the pages this Cycle actually fetched; resets to 0 when this Cycle ran off
+     * the end of the feed.
+     */
+    #[ORM\Column(name: 'next_start_page', type: 'integer')]
+    private int $nextStartPage = 0;
+
+    /**
      * @var Collection<int, FoundDeal>
      */
     #[ORM\OneToMany(targetEntity: FoundDeal::class, mappedBy: 'cycleRun', cascade: ['persist'], orphanRemoval: true)]
@@ -97,6 +106,16 @@ class CycleRun
     public function setSnapshottedCount(int $snapshottedCount): void
     {
         $this->snapshottedCount = $snapshottedCount;
+    }
+
+    public function getNextStartPage(): int
+    {
+        return $this->nextStartPage;
+    }
+
+    public function setNextStartPage(int $nextStartPage): void
+    {
+        $this->nextStartPage = $nextStartPage;
     }
 
     /**

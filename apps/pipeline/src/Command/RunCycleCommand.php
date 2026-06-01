@@ -97,10 +97,17 @@ final class RunCycleCommand extends Command
         $snapshotRows = [];
         $seenAsins = [];
         $pagesFetched = 0;
+        $reachedEndOfFeed = false;
 
-        // Sweep a fixed batch of Keepa `/deal` pages. The CycleRun funnel counts
-        // accumulate across the pages we searched.
-        for ($page = 0; $page < $this->pagesPerCycle; ++$page) {
+        // Resume paging where the last Cycle stopped, so cycles walk deeper across
+        // runs instead of re-scanning page 0 every time.
+        $lastRun = $this->entityManager->getRepository(CycleRun::class)->findLatest();
+        $startPage = $lastRun?->getNextStartPage() ?? 0;
+
+        // Sweep a fixed batch of Keepa `/deal` pages from the resume point. The
+        // CycleRun funnel counts accumulate across the pages we searched.
+        for ($i = 0; $i < $this->pagesPerCycle; ++$i) {
+            $page = $startPage + $i;
             // 2. Discover one page of raw candidates.
             $dealPage = $this->discovery->fetchDealPage($page);
             ++$pagesFetched;
@@ -110,6 +117,7 @@ final class RunCycleCommand extends Command
                 OutputInterface::VERBOSITY_VERBOSE,
             );
             if ([] === $rawCandidates) {
+                $reachedEndOfFeed = true;
                 break; // ran off the end of the feed; no deeper pages exist
             }
             $rawCount += \count($rawCandidates);
@@ -195,6 +203,10 @@ final class RunCycleCommand extends Command
         $cycleRun->setRawCount($rawCount);
         $cycleRun->setSurvivingCount($survivingCount);
         $cycleRun->setSnapshottedCount($snapshottedCount);
+        // Advance the cross-run cursor by the pages actually fetched (so a
+        // budget-truncated sweep resumes after its last page, not after a page it
+        // never reached); reset to 0 when this Cycle ran off the end of the feed.
+        $cycleRun->setNextStartPage($reachedEndOfFeed ? 0 : $startPage + $pagesFetched);
         $cycleRun->finish(new \DateTimeImmutable());
 
         $this->entityManager->persist($cycleRun);
