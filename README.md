@@ -7,7 +7,7 @@ PHP 8.5 / Symfony 8 / Docker monorepo.
 **What ships today:** the headless **Deal Pipeline** (`apps/pipeline`) with its
 review page, **plus** a standalone **WhatsApp gateway** (`apps/whatsapp-service`)
 that delivers a reviewed deal to a real WhatsApp channel via [WAHA](GLOSSARY.md).
-The full chain runs end to end: discover → attest → record → review → **publish**.
+The full chain runs end to end: discover → snapshot → record → review → **publish**.
 Clicking *Publish* on a recorded deal now posts the German-formatted affiliate
 message to the channel and writes it to Recorded Price History so it is never
 re-posted.
@@ -17,6 +17,25 @@ pipeline build spec in [`apps/pipeline/docs/specs/pipeline.md`](apps/pipeline/do
 the gateway spec in [`apps/whatsapp-service/docs/specs/whatsapp-service.md`](apps/whatsapp-service/docs/specs/whatsapp-service.md);
 the canonical vocabulary in [`GLOSSARY.md`](GLOSSARY.md). Read the glossary first
 if a capitalised term below is unfamiliar.
+
+## Quick start
+
+Everything runs inside the `app` container; you only need Docker.
+
+```sh
+cp .env.example .env   # fill in Keepa + Creators creds (WhatsApp keys optional until you publish)
+make setup             # start containers, install deps, migrate dev + test DBs
+make qa                # green check that the stack is wired correctly
+make cycle             # run one real Cycle (spends Keepa + Creators tokens)
+make review            # → http://localhost:8000  (the review page)
+```
+
+New here? Read [`GLOSSARY.md`](GLOSSARY.md), then
+[`docs/research/experiments-summary.md`](docs/research/experiments-summary.md),
+then skim the [ADRs](docs/adr/). The deeper sections below explain the pipeline,
+`packages/shared` seam pattern, and the WhatsApp gateway. **Agents:** `make qa`
+must stay green (PHPUnit + PHPStan max + CS-Fixer); the `test` DB needs
+`make migrate-test` after any migration.
 
 ## Layout
 
@@ -50,9 +69,9 @@ flowchart LR
     P["<b>Pre-filter</b><br/>Criteria + Outlier Guards<br/>free, no API call"]
     G["<b>Already-Posted Guard</b><br/>suppress posted ASINs"]
     S["<b>Live Snapshot</b><br/>Creators GetItems / OffersV2<br/>buy-box price + facts"]
-    R[("<b>Record</b><br/>attested deals only")]
+    R[("<b>Record</b><br/>every price-valid survivor<br/>attestation = per-deal marker")]
 
-    K -->|raw| P -->|survivors| G -->|new| S -->|attested| R
+    K -->|raw| P -->|survivors| G -->|new| S -->|snapshotted| R
 
     classDef free fill:#e6f4ea,stroke:#34a853,color:#000;
     classDef paid fill:#fef7e0,stroke:#f9ab00,color:#000;
@@ -77,23 +96,28 @@ flowchart LR
    10 ASINs/call. Captures live buy-box price, availability, condition, merchant,
    savings, deal flags, and the affiliate `detailPageURL` (passed through
    verbatim, never rebuilt).
-5. **Record** — persist one `found_deal` row per Cycle for every deal carrying
-   **[Amazon Attestation](GLOSSARY.md)** (`dealDetails` or a `WAS_PRICE` savings
-   basis), the only trustworthy proof of discount size.
+5. **Record** — persist one `found_deal` row for **every price-valid survivor**
+   that returns a snapshot. **[Amazon Attestation](GLOSSARY.md)** (`dealDetails` or
+   a `WAS_PRICE` savings basis) no longer gates recording — it rides along as a
+   per-deal marker, surfaced as a badge on the review page.
 
 ### Two decisions that shaped the current command
 
-- **Strict dial.** A Live Snapshot confirms a price is *real and buyable*, but
-  every discount *baseline* we have (Keepa `avg90`, Amazon `LIST_PRICE`) is
-  gameable or polluted. So the command records **only attested deals**. Snapshots
-  that are price-valid but unattested are counted and shown in verbose output, not
-  persisted. This is the "Strict" end of the volume-vs-trust dial discussed in the
-  product spec.
-- **Pagination.** Attestation is rare (~1 in 10 snapshotted items), so a Cycle
-  walks several `/deal` pages until it has enough attested deals or hits a ceiling.
-  Tuned by `maxPages` and `targetAttestedDeals` in `services.yaml`. Pages are
-  cached (`CachingKeepaDiscovery`) so repeat Cycles within the TTL re-spend no
-  Keepa tokens.
+- **Attestation is a marker, not a record gate.** A Live Snapshot confirms a price
+  is *real and buyable*, but every discount *baseline* we have (Keepa `avg90`,
+  Amazon `LIST_PRICE`) is gameable or polluted. Attestation is still the only
+  trustworthy proof of discount size, but rather than dropping unattested
+  survivors, the command **records them all** and flags the attested ones, leaving
+  the publish/skip judgement to a later Deal Gate and the human reviewer
+  ([GLOSSARY: Amazon Attestation](GLOSSARY.md)).
+- **Fixed-sweep pagination with cross-run continuation.** A Cycle sweeps a fixed
+  `pagesPerCycle` (default `2`) batch of `/deal` pages, tuned in `services.yaml`.
+  Crucially it does **not** restart at page 0 each run: a **[Page Cursor](GLOSSARY.md)**
+  (`cycle_run.next_start_page`) records where the last Cycle stopped, so successive
+  Cycles walk deeper into the feed and wrap back to the top only on reaching the
+  end ([ADR 0004](docs/adr/0004-cross-run-page-cursor-on-cyclerun.md)). Pages are
+  also cached (`CachingKeepaDiscovery`) so repeat fetches within the TTL re-spend
+  no Keepa tokens.
 
 ### Review page
 
@@ -206,9 +230,10 @@ reads next Cycle to suppress a re-post.
 - **Keepa is metered by tokens** (~20/min on the entry tier; a `/deal` page costs
   5). The design Pre-filters hard on the cheap call and only deep-fetches
   survivors. The command stops paginating before a page it cannot fund.
-- Tables: `cycle_run` (funnel counts + owned rows), `found_deal` (Keepa signals +
-  snapshot facts), `posted_deal` (Recorded Price History; written by
-  `WahaChannelPublisher` on a successful publish).
+- Tables: `cycle_run` (funnel counts + owned rows + `next_start_page`, the
+  cross-run [Page Cursor](GLOSSARY.md)), `found_deal` (Keepa signals + snapshot
+  facts), `posted_deal` (Recorded Price History; written by `WahaChannelPublisher`
+  on a successful publish).
 
 ## Running it
 
@@ -225,11 +250,16 @@ make review            # print the review page URL (http://localhost:8000)
 
 | `make` target | Does |
 |---------------|------|
-| `setup` | First run: `up` + `install` + `migrate` |
+| `setup` | First run: `up` + `install` + `migrate` + `migrate-test` |
 | `up` / `down` / `restart` | Manage the stack |
+| `migrate` / `migrate-test` | Run migrations on the dev / test database |
 | `cycle` | Run one Cycle (`ARGS=-vv` by default) |
 | `qa` | Full QA suite (phpunit + phpstan + cs-fixer) |
 | `shell` / `logs` | Drop into the container / tail logs |
+
+After adding a migration, run both `make migrate` and `make migrate-test` (or just
+`make setup`) so the dev and test schemas stay in lock-step — PHPUnit boots the
+`test` database and will fail against a stale schema.
 
 `.env` (git-ignored; only `.env.example` is committed and edited) needs a Keepa
 API key and Amazon Creators LWA credentials (`CREATORS_CREDENTIAL_ID`/`SECRET`,
@@ -251,9 +281,10 @@ testing a channel without the pipeline.
 
 - **Pre-filter thresholds** — `apps/pipeline/config/packages/pre_filter.yaml`
   (Criteria + Outlier Guards). Edits take effect next Cycle.
-- **Pagination, snapshot cap, throttle, cache TTL** —
-  `apps/pipeline/config/services.yaml` (`RunCycleCommand`, `SdkCreatorsClient`,
-  `CachingKeepaDiscovery` arguments).
+- **Pages per Cycle, snapshot cap, throttle, cache TTL** —
+  `apps/pipeline/config/services.yaml` (`RunCycleCommand.$pagesPerCycle`,
+  `SdkCreatorsClient`, `CachingKeepaDiscovery` arguments). The cross-run page
+  cursor is automatic and needs no tuning.
 - **Swapping the publisher** — rebind the `ChannelPublisher` alias in
   `services.yaml` (live `WahaChannelPublisher` in prod/dev; `NullChannelPublisher`
   under `when@test` so tests make no real HTTP call); nothing else changes.
@@ -280,8 +311,10 @@ The findings that shaped the code:
   confirms a price is real and buyable, but the "% off" rests on a baseline, and
   every baseline is gameable or polluted (Keepa `avg90` is Price-Outlier-polluted;
   Amazon `LIST_PRICE` is seller-set MSRP). Only **Amazon Attestation**
-  (`dealDetails` or `WAS_PRICE`) is trustworthy, and it is rare (~1 in 10). This is
-  the direct cause of the Strict dial above.
+  (`dealDetails` or `WAS_PRICE`) is trustworthy, and it is rare (~1 in 10). Rather
+  than discard the rest, the command records every price-valid survivor and flags
+  the attested ones — attestation is the trust *signal*, not a record gate (see the
+  decisions above).
 - **The four Outlier Guards run on the free `/deal` payload alone** — no paid call
   needed to reject the bulk of junk (spike-polluted baselines, no-demand, sub-€2
   floors, absurd >97% claims).
@@ -298,7 +331,9 @@ PHPUnit 13, PHPStan 2.x at `max` (Doctrine + Symfony extensions), PHP-CS-Fixer 3
 make qa     # phpunit + phpstan + cs-fixer (dry-run); or: make test / phpstan / cs
 ```
 
-Tests covering the paid APIs run against recorded fixtures
+PHPUnit boots the **`test`** database, so it must be migrated first — `make setup`
+does this, or run `make migrate-test` after adding a migration. Tests covering the
+paid APIs run against recorded fixtures
 (`packages/shared/tests/fixtures/`); a live smoke is a manual follow-up, never a
 merge blocker. The same applies to the gateway: WAHA is mocked in tests
 (`docker compose exec whatsapp-service composer qa`), and pairing + a real channel

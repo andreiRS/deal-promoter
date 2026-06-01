@@ -50,7 +50,7 @@ Criteria is taste (what we want), distinct from the [Outlier Guards](#outlier-gu
 
 ## Cycle
 
-One end-to-end run of the [Deal Pipeline](#deal-pipeline): fetch raw [Candidates](#candidate) → [Pre-filter](#pre-filter) → [Already-Posted Guard](#already-posted-guard) → [Live Snapshot](#live-snapshot) → [Deal Gate](#deal-gate) → [publish paced](#pacing) → [record](#recorded-price-history). Driven by cron every X minutes, guarded by a run-lock so cycles cannot overlap, and fail-safe (skip-and-retry on any error).
+One end-to-end run of the [Deal Pipeline](#deal-pipeline): fetch raw [Candidates](#candidate) → [Pre-filter](#pre-filter) → [Already-Posted Guard](#already-posted-guard) → [Live Snapshot](#live-snapshot) → [Deal Gate](#deal-gate) → [publish paced](#pacing) → [record](#recorded-price-history). Driven by cron every X minutes, guarded by a run-lock so cycles cannot overlap, and fail-safe (skip-and-retry on any error). Successive Cycles page deeper into the feed via the [Page Cursor](#page-cursor) rather than restarting from the top each run.
 
 ## Deal Gate
 
@@ -97,6 +97,17 @@ What they reject is a **Price Outlier** — a fake drop produced by a polluted K
 ## Pacing
 
 The rules that limit how fast we publish: a per-cycle cap, randomized spacing between posts, an hourly ceiling, and best-deals-first ordering. Protects subscribers from flooding and keeps the WhatsApp account from looking botty.
+
+## Page Cursor
+
+Where the next [Cycle](#cycle) resumes paging the Keepa `/deal` feed, so Cycles
+walk deeper across runs instead of re-scanning the top pages every time. Each
+Cycle fetches a fixed batch of pages from the cursor, advances it by the pages it
+actually fetched, and resets it to the top only when it reaches the end of the
+feed. Purely a discovery-coverage and token-efficiency device: it never affects
+*what* gets published (the [Already-Posted Guard](#already-posted-guard) handles
+de-dup), only *which* feed pages a given Cycle sees. See ADR-0004 for where the
+cursor is stored.
 
 ## Pre-filter
 

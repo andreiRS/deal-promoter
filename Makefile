@@ -39,7 +39,7 @@ shell: ## Open a shell inside the app container
 	$(EXEC) bash
 
 .PHONY: setup
-setup: up install migrate ## First-run: start, install deps, run migrations
+setup: up install migrate migrate-test ## First-run: start, install deps, migrate dev + test DBs
 
 ## ----------------------------------------------------------------------------
 ## Dependencies & database
@@ -52,6 +52,10 @@ install: ## Install Composer dependencies
 .PHONY: migrate
 migrate: ## Run pending Doctrine migrations
 	$(CONSOLE) doctrine:migrations:migrate -n
+
+.PHONY: migrate-test
+migrate-test: ## Run pending migrations on the test database (needed before `make qa`)
+	$(CONSOLE) doctrine:migrations:migrate -n --env=test
 
 .PHONY: migration
 migration: ## Generate a migration from entity changes
