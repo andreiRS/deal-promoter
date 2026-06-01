@@ -9,6 +9,22 @@ services:
         resource: '../src/'
         exclude:
             - '../src/Kernel.php'
+            # Doctrine entities are not services.
+            - '../src/Entity/'
 
-    DealPromoter\Shared\:
-        resource: '../../../packages/shared/src/'
+    # packages/shared is mostly value objects / DTOs / enums (Money, PreFilter,
+    # Keepa Candidate/DealPage/TokenMeter) which must NOT be autowired as
+    # services. Only the storage contracts live under Shared\Storage; their
+    # implementations are app-side, so nothing is registered from shared here.
+
+    # Bind the swappable persistence seam to its Doctrine-backed implementation.
+    DealPromoter\Shared\Storage\RecordedPriceHistory: '@App\Storage\DoctrineRecordedPriceHistory'
+
+when@test:
+    services:
+        # Expose the storage seam to the test container so the integration test
+        # can resolve the interface and prove the interface -> impl wiring.
+        # (No consumer exists yet, so the alias would otherwise be inlined away.)
+        DealPromoter\Shared\Storage\RecordedPriceHistory:
+            alias: App\Storage\DoctrineRecordedPriceHistory
+            public: true

@@ -14,6 +14,10 @@ RUN apt-get update \
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
+# PHPStan at level max with the Doctrine extension loads ORM metadata and blows
+# past the stock 128M CLI worker limit; give all PHP runs headroom.
+RUN echo 'memory_limit = 512M' > /usr/local/etc/php/conf.d/memory-limit.ini
+
 ENV COMPOSER_ALLOW_SUPERUSER=1
 
 # The monorepo root is mounted here by docker-compose; the app lives one level down.

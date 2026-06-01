@@ -1,0 +1,6 @@
+doctrine:
+    dbal:
+        # Isolate the test schema from dev data on the same Postgres container.
+        # DATABASE_URL is injected by docker-compose; we only append a suffix here
+        # (never via .env, which the user maintains by hand).
+        dbname_suffix: '_test%env(default::TEST_TOKEN)%'
