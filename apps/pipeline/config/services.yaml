@@ -80,6 +80,14 @@ services:
     # The Cycle depends on the discovery seam, not the concrete client.
     DealPromoter\Shared\Keepa\KeepaDiscovery: '@DealPromoter\Shared\Keepa\KeepaClient'
 
+    # --- Cycle pagination (P7) ---
+    # Attestation is rare, so a cycle walks several /deal pages until it has
+    # enough attested deals. Tune the volume-vs-cost dial here.
+    App\Command\RunCycleCommand:
+        arguments:
+            $maxPages: 3 # hard ceiling on /deal pages fetched per cycle (cost bound)
+            $targetAttestedDeals: 5 # stop paging once this many attested deals are recorded
+
     # --- Publish channel seam (P9) ---
     # NullChannelPublisher logs intent and makes no real HTTP call.
     # Swap the alias here to wire a real publisher with no controller/template change.
