@@ -88,12 +88,16 @@ final class RunCycleCommand extends Command
         $survivors = $this->alreadyPostedGuard->apply(...$preFiltered)->survivors;
         $survivingCount = \count($survivors);
 
-        // 4. Live Snapshot for the surviving ASINs. A survivor with a snapshot
-        //    becomes a found deal; a survivor absent from the map is skipped.
+        // 4. Live Snapshot for the surviving ASINs. A survivor absent from the map
+        //    is skipped; a snapshot confirms Price Validity but only an
+        //    Amazon-attested one (dealDetails / WAS_PRICE) becomes a found deal.
         $asins = array_map(static fn (Candidate $c): string => $c->asin, $survivors);
         $snapshots = [] === $asins ? [] : $this->creators->fetchSnapshots(...$asins);
 
-        // 5. Record one CycleRun plus one FoundDeal per found deal.
+        // 5. Record one CycleRun plus one FoundDeal per attested deal. Strict dial:
+        //    a price-valid-but-unattested snapshot is counted, not published, so
+        //    `snapshottedCount` (Price Validity) stays distinct from the attested
+        //    found-deal rows (`count($cycleRun->getFoundDeals())`).
         $cycleRun = new CycleRun($startedAt);
         $snapshottedCount = 0;
         foreach ($survivors as $candidate) {
@@ -101,10 +105,15 @@ final class RunCycleCommand extends Command
             if (null === $snapshot) {
                 continue;
             }
+            ++$snapshottedCount;
+
+            if (!$snapshot->hasAmazonAttestation()) {
+                continue;
+            }
 
             $cycleRun->addFoundDeal(FoundDeal::fromSnapshot($candidate, $snapshot, $startedAt));
-            ++$snapshottedCount;
         }
+        $attestedCount = \count($cycleRun->getFoundDeals());
 
         $cycleRun->setRawCount($rawCount);
         $cycleRun->setSurvivingCount($survivingCount);
@@ -115,10 +124,11 @@ final class RunCycleCommand extends Command
         $this->entityManager->flush();
 
         $io->success(\sprintf(
-            'Cycle complete: %d raw candidates, %d surviving candidates, %d found deals recorded.',
+            'Cycle complete: %d raw candidates, %d surviving, %d snapshotted, %d attested deals recorded.',
             $rawCount,
             $survivingCount,
             $snapshottedCount,
+            $attestedCount,
         ));
 
         return Command::SUCCESS;

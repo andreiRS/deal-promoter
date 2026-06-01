@@ -31,4 +31,16 @@ final readonly class LiveSnapshot
         public string $detailPageUrl,
     ) {
     }
+
+    /**
+     * Amazon's own evidence that a discount is real: a `dealDetails` badge/window
+     * OR a `savingBasis` of type `WAS_PRICE` (Amazon's recent actual selling
+     * price). Either signal alone counts. A `LIST_PRICE` basis is seller-set MSRP,
+     * gameable, and so is NOT attestation. The only trustworthy on-snapshot source
+     * of Discount Magnitude; rare (~1 in 10 snapshotted items).
+     */
+    public function hasAmazonAttestation(): bool
+    {
+        return $this->hasDealDetails || 'WAS_PRICE' === $this->savingBasisType;
+    }
 }

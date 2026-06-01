@@ -111,6 +111,9 @@ final class RunCycleCommandTest extends KernelTestCase
 
         // Pick two known surviving ASINs (golden set) and return snapshots for them
         // only — a third surviving ASIN with no snapshot must be skipped silently.
+        // A is Amazon-attested (dealDetails + WAS_PRICE) and becomes a found deal;
+        // B is a valid snapshot with NO attestation, so the Strict dial counts it
+        // as snapshotted but does not record it as a deal.
         $snapshotA = new LiveSnapshot(
             asin: '019085894X',
             priceCents: 1234,
@@ -153,19 +156,21 @@ final class RunCycleCommandTest extends KernelTestCase
         self::assertSame(150, $cycleRun->getRawCount());
         // 93 golden survivors clear Pre-filter + (empty) Already-Posted Guard.
         self::assertSame(93, $cycleRun->getSurvivingCount());
-        // Only the two snapshotted survivors become found deals.
+        // Both survivors were snapshotted (Price Validity), but only the attested
+        // one becomes a found deal.
         self::assertSame(2, $cycleRun->getSnapshottedCount());
         self::assertNotNull($cycleRun->getFinishedAt());
 
         $deals = $cycleRun->getFoundDeals();
-        self::assertCount(2, $deals);
+        self::assertCount(1, $deals);
 
         $byAsin = [];
         foreach ($deals as $deal) {
             $byAsin[$deal->getAsin()] = $deal;
         }
+        // A is attested → recorded; B is unattested → snapshotted but not recorded.
         self::assertArrayHasKey('019085894X', $byAsin);
-        self::assertArrayHasKey('B0010AH4BW', $byAsin);
+        self::assertArrayNotHasKey('B0010AH4BW', $byAsin);
 
         $a = $byAsin['019085894X'];
         // Money is integer cents from the snapshot.
