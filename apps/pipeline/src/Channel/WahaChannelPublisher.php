@@ -26,6 +26,13 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
  */
 final readonly class WahaChannelPublisher implements ChannelPublisher
 {
+    /**
+     * Sale emojis; one is picked at random per message to keep posts lively.
+     *
+     * @var list<string>
+     */
+    public const array SALE_EMOJIS = ['🔥', '💰', '🏷️', '⚡', '🎉'];
+
     public function __construct(
         private HttpClientInterface $http,
         private EntityManagerInterface $em,
@@ -49,7 +56,7 @@ final readonly class WahaChannelPublisher implements ChannelPublisher
             throw new PublishFailed(\sprintf('Cannot publish %s: no snapshot price.', $deal->getAsin()));
         }
 
-        $message = $this->formatMessage($deal->getTitle(), $priceCents, $affiliateUrl);
+        $message = $this->formatMessage($priceCents, $affiliateUrl);
 
         try {
             $response = $this->http->request('POST', rtrim($this->serviceUrl, '/').'/send', [
@@ -71,15 +78,17 @@ final readonly class WahaChannelPublisher implements ChannelPublisher
 
     /**
      * Build the German channel message body, exactly:
-     *   "{title}\n{price} €\n\n{affiliateUrl}".
+     *   "{price} € {emoji}\n{affiliateUrl}".
      *
      * Price is euros with a comma decimal and dot thousands separator, 2 decimals
-     * (German): 1299 → "12,99 €", 129900 → "1.299,00 €".
+     * (German): 1299 → "12,99 €", 129900 → "1.299,00 €". The emoji is a random
+     * pick from {@see self::SALE_EMOJIS}.
      */
-    private function formatMessage(string $title, int $priceCents, string $affiliateUrl): string
+    private function formatMessage(int $priceCents, string $affiliateUrl): string
     {
         $price = number_format($priceCents / 100, 2, ',', '.');
+        $emoji = self::SALE_EMOJIS[array_rand(self::SALE_EMOJIS)];
 
-        return \sprintf("%s\n%s €\n\n%s", $title, $price, $affiliateUrl);
+        return \sprintf("%s € %s\n%s", $price, $emoji, $affiliateUrl);
     }
 }

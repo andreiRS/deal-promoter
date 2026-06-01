@@ -141,7 +141,7 @@ final class WahaChannelPublisherTest extends TestCase
         /** @var array{chatId: string, text: string} $decoded */
         $decoded = json_decode((string) $captured['body'], true, 512, \JSON_THROW_ON_ERROR);
         self::assertSame(self::CHANNEL_ID, $decoded['chatId']);
-        self::assertSame("Cool Gadget\n12,99 €\n\nhttps://www.amazon.de/dp/B000FMT001?tag=t-21", $decoded['text']);
+        $this->assertMessageShape('12,99 €', 'https://www.amazon.de/dp/B000FMT001?tag=t-21', $decoded['text']);
     }
 
     public function testGermanThousandsSeparatorInMessage(): void
@@ -159,7 +159,24 @@ final class WahaChannelPublisherTest extends TestCase
 
         /** @var array{text: string} $decoded */
         $decoded = json_decode((string) $captured['body'], true, 512, \JSON_THROW_ON_ERROR);
-        self::assertSame("Big Item\n1.299,00 €\n\nhttps://www.amazon.de/dp/B000THOU01?tag=t-21", $decoded['text']);
+        $this->assertMessageShape('1.299,00 €', 'https://www.amazon.de/dp/B000THOU01?tag=t-21', $decoded['text']);
+    }
+
+    /**
+     * Assert the message is exactly "{price} € {emoji}\n{url}" where the emoji is
+     * one of the sale set. Title is no longer included.
+     */
+    private function assertMessageShape(string $price, string $url, string $text): void
+    {
+        $parts = explode("\n", $text, 2);
+        self::assertCount(2, $parts, 'Message must be a price line and a URL line.');
+        [$priceLine, $urlLine] = $parts;
+
+        self::assertSame($url, $urlLine);
+        self::assertStringStartsWith($price.' ', $priceLine);
+
+        $emoji = substr($priceLine, \strlen($price.' '));
+        self::assertContains($emoji, WahaChannelPublisher::SALE_EMOJIS);
     }
 
     private function publisher(MockHttpClient $http, EntityManagerInterface $em): WahaChannelPublisher
