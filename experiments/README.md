@@ -76,6 +76,27 @@ Env (in `.env.example`): `CREATORS_CREDENTIAL_ID`, `CREATORS_CREDENTIAL_SECRET`,
 
 ---
 
+## Full pipeline (exp 09)
+
+Both halves wired together in one automated pass — the shape `docs/specs/product.md`
+calls the headless deal pipeline, minus the DB and WhatsApp/queue layers. It is the
+**canonical reference for the PHP/Symfony port** (read `run.ts` top to bottom; every stage
+carries a `// PHP port:` note), and its deliverable `FINDINGS.md` materially refines the
+spec's open **deal-gate** question.
+
+| # | Folder | Question it answers | Cost |
+|---|--------|---------------------|------|
+| 09 | `09-pipeline-e2e` | Does the whole thing run in one pass — Keepa discovery → Creators live re-validation + deal gate → rendered output? Three functions (`discover`→`validate`→`renderHtml`), two API calls. | 5 tokens + 1 transaction |
+
+**Headline finding (FINDINGS.md §1):** live validation confirms a price is *real and buyable*
+but **not** the *size* of the discount — the "% off" rests on a baseline, and Keepa's `avg90`
+is glitch-polluted (it published "80% off" items that were really ~12% off). Trust **Amazon's
+own** `savings`/`savingBasisType: WAS_PRICE`/`dealDetails` (already in the same `GetItems` call)
+for the advertised discount; treat Keepa as discovery/ranking only. No render arg needed — exp09
+discovers its own ASINs. Output is a brand-styled `out/results.html` (gitignored).
+
+---
+
 ## Discipline (so we don't burn tokens / trip rate limits)
 
 - **Keepa:** every probe logs the live token meter (`tokensLeft`, `refillRate`,

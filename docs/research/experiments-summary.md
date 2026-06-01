@@ -100,6 +100,38 @@ Corrections to the brief:
 
 ---
 
+## Full pipeline — discovery + validation wired together (exp 09)
+
+### 09 · Does the whole pipeline run in one pass, and does it publish *true* deals?
+**Yes to the wiring, no to the second half as specced.** One automated pass (`discover` →
+`validate` → `renderHtml`, **two API calls total**: 5 Keepa tokens + 1 Creators transaction)
+took 150 deals → 17 free-pre-filter survivors → top-10 by score → live Creators gate → a branded
+HTML table. The handoff works and the affiliate `detailPageURL` (with `tag=`) renders.
+- **Load-bearing finding:** live validation confirms a price is *real and buyable*, NOT the
+  *magnitude* of the discount. The gate's "live price vs Keepa `avg90`" published fake 80%+ drops:
+  one item read 80% off avg90 but Amazon's own `WAS_PRICE` said 12%; another read 84% off while
+  Amazon flagged no deal at all. Keepa's avg90 is the persistently-polluted baseline (long OOS +
+  third-party gouging) that exp04/05 warned about, and the live call cannot un-pollute history.
+- **`savingBasisType: WAS_PRICE` exists** (refines exp08's "always `LIST_PRICE`"): Amazon's recent
+  actual selling price, the one trustworthy magnitude baseline. But of 10 validated items only
+  **4** carried `savings`, and **3 of those 4 were `LIST_PRICE`** (gameable MSRP, claiming 81–88%);
+  only **1** had `dealDetails` + `WAS_PRICE`. So "require Amazon `savings`" is NOT a fix; only
+  `dealDetails`/`WAS_PRICE` are trustworthy, and they were rare (1 of 10) on this page.
+- **The fix (≈free, no extra call):** trust Amazon `dealDetails` + `savingBasisType == WAS_PRICE`
+  for the advertised %, treat Keepa as discovery/ranking only, advertise the conservative
+  `min(keepa, amazon)`, and require a stable Keepa baseline (`outOfStockPercentage90` low,
+  avg30≈avg90≈avg180) when Amazon attests nothing. The durable fix is the spec's own `record`
+  step: once we log live prices each cycle, our own history is the un-gameable baseline.
+- **No deep `/product?stats` stage:** dropped on purpose. It would not catch the above (live
+  validation can't un-pollute history; the magnitude fix lives in the Creators fields), and it
+  cost ~1 token/survivor for a 0/26 rejection in exp05.
+- `availability.type` seen live: `IN_STOCK`, `IN_STOCK_SCARCE` (buyable), `LEADTIME` (ships in
+  2 to 3 days, treated as not-in-stock; correctly produced the run's single SKIP).
+  `price.money.amount` is a **decimal euro** number; convert to integer cents at the boundary,
+  never compare floats or cross the Keepa-cents / Creators-euros boundary unconverted.
+
+---
+
 ## The through-line
 - **Keepa is cheap, batchable discovery** (5/page + 1/survivor, ~39 passes/hr) — but its
   averages are **glitch-polluted**, and no average-based guard can catch a
@@ -108,3 +140,8 @@ Corrections to the brief:
   + the ready-to-post tagged affiliate URL.
 - **Never publish a price you have not just re-confirmed live on Creators.** That single
   rule is why the funnel ends in a Creators re-validation step before publish.
+- **Live validation proves price *validity*, not discount *magnitude* (exp09).** The "% off"
+  always rests on a baseline, and every baseline we have is gameable or pollutable: Keepa avg90
+  is glitch-polluted, Amazon `LIST_PRICE` is gameable MSRP. Only Amazon `dealDetails` +
+  `WAS_PRICE` is trustworthy, and it is rare. Advertise the conservative cross-source minimum;
+  the durable baseline is our own recorded price history once the `record` step exists.

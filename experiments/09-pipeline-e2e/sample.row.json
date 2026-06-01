@@ -1,0 +1,39 @@
+{
+  "_note": "One gated result row from a live exp09 pass (amazon.de), tag scrubbed to YOURTAG-21. This PUBLISH row is the §1 cautionary case: the Keepa-avg90 drop (80%) is a polluted-baseline overstatement; Amazon's own savingBasis (WAS_PRICE 9,85 €) says the real discount is ~12%. `source.buyBoxListing` is the trimmed Creators listing the row was computed from.",
+
+  "row": {
+    "asin": "B00R13CIAY",
+    "title": "STARWAX - Zementschleier-Entferner - Reinigt Zementspuren, Rost, Kalkauswaschungen - Anwendung im Innen- und Außenbereich - Konzentrierte Formel - -1 l - 15 bis 20 m²",
+    "detailPageURL": "https://www.amazon.de/dp/B00R13CIAY?tag=YOURTAG-21&linkCode=ogi&th=1&psc=1",
+    "dealImage": "https://images-na.ssl-images-amazon.com/images/I/410jEGLkidL.jpg",
+    "avg90": 4436,
+    "liveCents": 870,
+    "wasCents": 985,
+    "liveDrop": 0.8038,
+    "amazonSavingsPct": 12,
+    "dealBadge": "Befristetes Angebot",
+    "condition": "New",
+    "availability": "IN_STOCK",
+    "merchant": "Amazon",
+    "violatesMAP": false,
+    "publish": true,
+    "reasons": []
+  },
+
+  "source": {
+    "_note": "Trimmed offersV2 buy-box listing (one of possibly several listings; selected via isBuyBoxWinner). All money.amount values are DECIMAL euros — convert to cents at the boundary.",
+    "buyBoxListing": {
+      "isBuyBoxWinner": true,
+      "condition": { "value": "New", "subCondition": "Unknown" },
+      "availability": { "type": "IN_STOCK", "message": "Auf Lager", "minOrderQuantity": 1 },
+      "merchantInfo": { "id": "A3JWKAKR8XB7XF", "name": "Amazon" },
+      "violatesMAP": false,
+      "dealDetails": { "badge": "Befristetes Angebot", "accessType": "ALL", "startTime": "...", "endTime": "..." },
+      "price": {
+        "money": { "amount": 8.7, "currency": "EUR", "displayAmount": "8,70 €" },
+        "savingBasis": { "money": { "amount": 9.85, "currency": "EUR", "displayAmount": "9,85 €" }, "savingBasisType": "WAS_PRICE" },
+        "savings": { "money": { "amount": 1.15, "currency": "EUR", "displayAmount": "1,15 €" }, "percentage": 12 }
+      }
+    }
+  }
+}
