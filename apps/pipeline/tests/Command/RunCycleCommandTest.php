@@ -18,6 +18,7 @@ use DealPromoter\Shared\PreFilter\PreFilter;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Tester\CommandTester;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
@@ -144,10 +145,20 @@ final class RunCycleCommandTest extends KernelTestCase
         ]);
 
         $tester = $this->command($discovery, $creators);
-        $exit = $tester->execute([]);
+        $exit = $tester->execute([], ['verbosity' => OutputInterface::VERBOSITY_VERBOSE]);
 
         self::assertSame(Command::SUCCESS, $exit);
         self::assertSame(1, $this->countCycleRuns());
+
+        // Verbose output exposes per-product attestation state: A is recorded,
+        // the unattested B is shown snapshotted-but-skipped (the visibility the
+        // Strict dial otherwise discards).
+        $display = $tester->getDisplay();
+        self::assertStringContainsString('Live Snapshot:', $display);
+        self::assertStringContainsString('019085894X', $display);
+        self::assertStringContainsString('attested', $display);
+        self::assertStringContainsString('B0010AH4BW', $display);
+        self::assertStringContainsString('skipped', $display);
 
         // Reload the single CycleRun from the DB.
         $cycleRun = $this->em->getRepository(CycleRun::class)->findOneBy([]);

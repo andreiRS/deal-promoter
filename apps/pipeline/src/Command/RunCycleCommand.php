@@ -11,6 +11,7 @@ use DealPromoter\Shared\Creators\CreatorsClient;
 use DealPromoter\Shared\Keepa\Candidate;
 use DealPromoter\Shared\Keepa\KeepaDiscovery;
 use DealPromoter\Shared\PreFilter\PreFilter;
+use DealPromoter\Shared\PreFilter\PreFilterResult;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -82,17 +83,41 @@ final class RunCycleCommand extends Command
         // 2. Discover raw candidates.
         $rawCandidates = $this->discovery->fetchDealPage()->candidates;
         $rawCount = \count($rawCandidates);
+        $io->writeln(
+            \sprintf('<info>Discover:</info> %d raw candidates from Keepa.', $rawCount),
+            OutputInterface::VERBOSITY_VERBOSE,
+        );
 
         // 3. Pre-filter, then Already-Posted Guard -> surviving candidates.
-        $preFiltered = $this->preFilter->apply(...$rawCandidates)->survivors;
+        $preFilterResult = $this->preFilter->apply(...$rawCandidates);
+        $preFiltered = $preFilterResult->survivors;
+        $this->reportPreFilter($io, $rawCount, $preFilterResult);
+
         $survivors = $this->alreadyPostedGuard->apply(...$preFiltered)->survivors;
         $survivingCount = \count($survivors);
+        $io->writeln(
+            \sprintf(
+                '<info>Already-Posted Guard:</info> %d -> %d survivors (%d already posted).',
+                \count($preFiltered),
+                $survivingCount,
+                \count($preFiltered) - $survivingCount,
+            ),
+            OutputInterface::VERBOSITY_VERBOSE,
+        );
 
         // 4. Live Snapshot for the surviving ASINs. A survivor absent from the map
         //    is skipped; a snapshot confirms Price Validity but only an
         //    Amazon-attested one (dealDetails / WAS_PRICE) becomes a found deal.
         $asins = array_map(static fn (Candidate $c): string => $c->asin, $survivors);
         $snapshots = [] === $asins ? [] : $this->creators->fetchSnapshots(...$asins);
+        $io->writeln(
+            \sprintf(
+                '<info>Live Snapshot:</info> %d ASINs sent, %d snapshots returned.',
+                \count($asins),
+                \count($snapshots),
+            ),
+            OutputInterface::VERBOSITY_VERBOSE,
+        );
 
         // 5. Record one CycleRun plus one FoundDeal per attested deal. Strict dial:
         //    a price-valid-but-unattested snapshot is counted, not published, so
@@ -100,6 +125,7 @@ final class RunCycleCommand extends Command
         //    found-deal rows (`count($cycleRun->getFoundDeals())`).
         $cycleRun = new CycleRun($startedAt);
         $snapshottedCount = 0;
+        $snapshotRows = [];
         foreach ($survivors as $candidate) {
             $snapshot = $snapshots[$candidate->asin] ?? null;
             if (null === $snapshot) {
@@ -107,13 +133,22 @@ final class RunCycleCommand extends Command
             }
             ++$snapshottedCount;
 
-            if (!$snapshot->hasAmazonAttestation()) {
-                continue;
+            $attested = $snapshot->hasAmazonAttestation();
+            if ($attested) {
+                $cycleRun->addFoundDeal(FoundDeal::fromSnapshot($candidate, $snapshot, $startedAt));
             }
 
-            $cycleRun->addFoundDeal(FoundDeal::fromSnapshot($candidate, $snapshot, $startedAt));
+            $snapshotRows[] = [
+                $snapshot->asin,
+                $this->euros($snapshot->priceCents),
+                $snapshot->availability ?? '—',
+                $snapshot->savingBasisType ?? '—',
+                $snapshot->hasDealDetails ? 'yes' : 'no',
+                $attested ? '<info>✓ attested</info>' : '<comment>skipped</comment>',
+            ];
         }
         $attestedCount = \count($cycleRun->getFoundDeals());
+        $this->reportSnapshots($io, $snapshotRows);
 
         $cycleRun->setRawCount($rawCount);
         $cycleRun->setSurvivingCount($survivingCount);
@@ -132,5 +167,56 @@ final class RunCycleCommand extends Command
         ));
 
         return Command::SUCCESS;
+    }
+
+    /**
+     * Verbose-only: how many candidates the Pre-filter dropped and which reasons
+     * fired most (one candidate can trip several gates, so the tally exceeds the
+     * rejected count).
+     */
+    private function reportPreFilter(SymfonyStyle $io, int $rawCount, PreFilterResult $result): void
+    {
+        if (!$io->isVerbose()) {
+            return;
+        }
+
+        $survived = \count($result->survivors);
+        $io->writeln(\sprintf(
+            '<info>Pre-filter:</info> %d -> %d survivors (%d rejected).',
+            $rawCount,
+            $survived,
+            \count($result->rejections),
+        ));
+
+        $counts = $result->reasonCounts();
+        arsort($counts);
+        foreach ($counts as $reason => $count) {
+            $io->writeln(\sprintf('  · %s: %d', $reason, $count), OutputInterface::VERBOSITY_VERY_VERBOSE);
+        }
+    }
+
+    /**
+     * Verbose-only: one row per snapshotted survivor showing the attestation
+     * signals (savingBasis + dealDetails) and whether the Strict dial recorded it.
+     * This is the window into "snapshotted but not attested" the DB no longer
+     * keeps, since unattested snapshots are dropped rather than persisted.
+     *
+     * @param list<array{string, string, string, string, string, string}> $rows
+     */
+    private function reportSnapshots(SymfonyStyle $io, array $rows): void
+    {
+        if (!$io->isVerbose() || [] === $rows) {
+            return;
+        }
+
+        $io->table(
+            ['ASIN', 'Price', 'Availability', 'SavingBasis', 'DealDetails', 'Attestation'],
+            $rows,
+        );
+    }
+
+    private function euros(int $cents): string
+    {
+        return \sprintf('%.2f €', $cents / 100);
     }
 }
