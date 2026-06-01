@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Creators;
 
+use Amazon\CreatorsAPI\v1\ApiException;
 use Amazon\CreatorsAPI\v1\com\amazon\creators\api\DefaultApi;
 use Amazon\CreatorsAPI\v1\com\amazon\creators\model\GetItemsRequestContent;
 use Amazon\CreatorsAPI\v1\com\amazon\creators\model\GetItemsResource;
@@ -26,6 +27,9 @@ final readonly class SdkCreatorsClient implements CreatorsClient
     /** Amazon's GetItems hard limit on ASINs per call. */
     private const int BATCH_SIZE = 10;
 
+    /** HTTP status the SDK reports (via ApiException::getCode) when throttled. */
+    private const int HTTP_TOO_MANY_REQUESTS = 429;
+
     /**
      * The OffersV2 resources we need for the attestation snapshot. Without these
      * the listings come back without price/availability/condition/merchant.
@@ -40,12 +44,27 @@ final readonly class SdkCreatorsClient implements CreatorsClient
         GetItemsResource::OFFERS_V2_LISTINGS_DEAL_DETAILS,
     ];
 
+    private Sleeper $sleeper;
+
+    /**
+     * @param int $throttleMicros    pause between consecutive GetItems batches;
+     *                               Amazon throttles bursts against a ~1 TPS floor
+     *                               quota, so steady-pace the calls. 0 disables it.
+     * @param int $maxRetries        how many times to retry a throttled (429) batch
+     *                               before letting the error surface (cycle fail-safe)
+     * @param int $backoffBaseMicros first 429 backoff wait; each retry doubles it
+     */
     public function __construct(
         private DefaultApi $api,
         private string $partnerTag,
         private string $marketplace,
         private ?int $cap = null,
+        private int $throttleMicros = 0,
+        private int $maxRetries = 3,
+        private int $backoffBaseMicros = 1_000_000,
+        ?Sleeper $sleeper = null,
     ) {
+        $this->sleeper = $sleeper ?? new UsleepSleeper();
     }
 
     public function fetchSnapshots(string ...$asins): array
@@ -56,7 +75,15 @@ final readonly class SdkCreatorsClient implements CreatorsClient
         }
 
         $snapshots = [];
+        $first = true;
         foreach (array_chunk($asins, self::BATCH_SIZE) as $batch) {
+            // Space the batches apart (never before the first / after the last)
+            // so a multi-batch cycle does not burst past the per-second quota.
+            if (!$first) {
+                $this->sleeper->sleep($this->throttleMicros);
+            }
+            $first = false;
+
             foreach ($this->fetchBatch($batch) as $asin => $snapshot) {
                 $snapshots[$asin] = $snapshot;
             }
@@ -81,7 +108,7 @@ final readonly class SdkCreatorsClient implements CreatorsClient
         // not. (Line comment, not a docblock, so php-cs-fixer cannot strip it.)
         $request->setResources(self::RESOURCES); // @phpstan-ignore argument.type
 
-        $response = $this->api->getItems($this->marketplace, $request);
+        $response = $this->getItemsWithBackoff($request);
         if (!$response instanceof GetItemsResponseContent) {
             return [];
         }
@@ -95,6 +122,29 @@ final readonly class SdkCreatorsClient implements CreatorsClient
         }
 
         return $snapshots;
+    }
+
+    /**
+     * Calls GetItems, retrying on a 429 with exponential backoff. A non-429
+     * error (or a 429 that outlasts $maxRetries) is rethrown so the cycle's
+     * fail-safe skips the run rather than recording a partial result.
+     */
+    private function getItemsWithBackoff(GetItemsRequestContent $request): mixed
+    {
+        $attempt = 0;
+        while (true) {
+            try {
+                return $this->api->getItems($this->marketplace, $request);
+            } catch (ApiException $e) {
+                if (self::HTTP_TOO_MANY_REQUESTS !== $e->getCode() || $attempt >= $this->maxRetries) {
+                    throw $e;
+                }
+
+                // base, 2x base, 4x base, ...
+                $this->sleeper->sleep($this->backoffBaseMicros << $attempt);
+                ++$attempt;
+            }
+        }
     }
 
     /**

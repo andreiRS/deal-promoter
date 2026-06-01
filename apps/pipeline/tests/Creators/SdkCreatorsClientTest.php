@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace App\Tests\Creators;
 
+use Amazon\CreatorsAPI\v1\ApiException;
 use Amazon\CreatorsAPI\v1\com\amazon\creators\api\DefaultApi;
 use Amazon\CreatorsAPI\v1\com\amazon\creators\model\GetItemsRequestContent;
 use Amazon\CreatorsAPI\v1\com\amazon\creators\model\GetItemsResponseContent;
 use Amazon\CreatorsAPI\v1\ObjectSerializer;
 use App\Creators\SdkCreatorsClient;
+use App\Creators\Sleeper;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -132,6 +134,94 @@ final class SdkCreatorsClientTest extends TestCase
         self::assertSame(10, \count($calls[0]));
     }
 
+    public function testThrottlesBetweenBatchesButNotBeforeTheFirstOne(): void
+    {
+        $asins = [];
+        for ($i = 1; $i <= 23; ++$i) {
+            $asins[] = \sprintf('B%09d', $i);
+        }
+
+        $calls = [];
+        $sleeper = $this->recordingSleeper();
+
+        // 23 ASINs => 3 batches. Steady-pace between them, never before the first.
+        (new SdkCreatorsClient($this->apiSpy($calls), 'partner-tag', 'www.amazon.de', null, 1_100_000, 3, 1_000_000, $sleeper))
+            ->fetchSnapshots(...$asins);
+
+        self::assertSame([1_100_000, 1_100_000], $sleeper->micros, '2 inter-batch sleeps for 3 batches, none before the first');
+    }
+
+    public function testDoesNotThrottleASingleBatch(): void
+    {
+        $calls = [];
+        $sleeper = $this->recordingSleeper();
+
+        (new SdkCreatorsClient($this->apiSpy($calls), 'partner-tag', 'www.amazon.de', null, 1_100_000, 3, 1_000_000, $sleeper))
+            ->fetchSnapshots('B000000001');
+
+        self::assertSame([], $sleeper->micros, 'a single batch is one call, nothing to space out');
+    }
+
+    public function testRetriesWithExponentialBackoffAfterA429ThenSucceeds(): void
+    {
+        $response = $this->responseFor([$this->buyBoxItem('B000000001', 12.0)]);
+        $api = $this->createStub(DefaultApi::class);
+        $attempts = 0;
+        $api->method('getItems')->willReturnCallback(
+            static function () use (&$attempts, $response): GetItemsResponseContent {
+                ++$attempts;
+                if ($attempts <= 2) {
+                    throw new ApiException('throttled', 429);
+                }
+
+                return $response;
+            },
+        );
+        $sleeper = $this->recordingSleeper();
+
+        $snap = (new SdkCreatorsClient($api, 'partner-tag', 'www.amazon.de', null, 0, 3, 1_000_000, $sleeper))
+            ->fetchSnapshots('B000000001')['B000000001'];
+
+        self::assertSame(1200, $snap->priceCents);
+        self::assertSame([1_000_000, 2_000_000], $sleeper->micros, 'backoff doubles: base, then 2x base');
+    }
+
+    public function testRethrowsWhenThrottlingPersistsBeyondMaxRetries(): void
+    {
+        $api = $this->createStub(DefaultApi::class);
+        $api->method('getItems')->willThrowException(new ApiException('throttled', 429));
+        $sleeper = $this->recordingSleeper();
+
+        $client = new SdkCreatorsClient($api, 'partner-tag', 'www.amazon.de', null, 0, 3, 1_000_000, $sleeper);
+
+        try {
+            $client->fetchSnapshots('B000000001');
+            self::fail('a persistent 429 must surface so the cycle fail-safe can skip it');
+        } catch (ApiException $e) {
+            self::assertSame(429, $e->getCode());
+        }
+
+        self::assertSame([1_000_000, 2_000_000, 4_000_000], $sleeper->micros, 'maxRetries=3 backoff sleeps before giving up');
+    }
+
+    public function testDoesNotRetryNon429Errors(): void
+    {
+        $api = $this->createStub(DefaultApi::class);
+        $api->method('getItems')->willThrowException(new ApiException('bad request', 400));
+        $sleeper = $this->recordingSleeper();
+
+        $client = new SdkCreatorsClient($api, 'partner-tag', 'www.amazon.de', null, 0, 3, 1_000_000, $sleeper);
+
+        try {
+            $client->fetchSnapshots('B000000001');
+            self::fail('a 400 is a real error, not a throttle — it must surface immediately');
+        } catch (ApiException $e) {
+            self::assertSame(400, $e->getCode());
+        }
+
+        self::assertSame([], $sleeper->micros, 'no backoff for a non-429 error');
+    }
+
     public function testAbsentForAsinWithNoBuyBoxWinner(): void
     {
         // One item whose only listing is NOT the buy-box winner.
@@ -207,6 +297,25 @@ final class SdkCreatorsClientTest extends TestCase
         );
 
         return $api;
+    }
+
+    /**
+     * A Sleeper that records the micros it was asked to wait instead of waiting,
+     * so throttle spacing and 429 backoff are asserted without real delays.
+     *
+     * @return Sleeper&object{micros: list<int>}
+     */
+    private function recordingSleeper(): Sleeper
+    {
+        return new class implements Sleeper {
+            /** @var list<int> */
+            public array $micros = [];
+
+            public function sleep(int $micros): void
+            {
+                $this->micros[] = $micros;
+            }
+        };
     }
 
     /**
