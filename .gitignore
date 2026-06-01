@@ -2,17 +2,26 @@
 
 # PHP / Composer
 /apps/pipeline/vendor/
+/apps/whatsapp-service/vendor/
 /packages/shared/vendor/
 /apps/pipeline/var/
+/apps/whatsapp-service/var/
 /apps/pipeline/config/reference.php
+/apps/whatsapp-service/config/reference.php
 /apps/pipeline/.php-cs-fixer.cache
+/apps/whatsapp-service/.php-cs-fixer.cache
 /apps/pipeline/.phpunit.result.cache
+/apps/whatsapp-service/.phpunit.result.cache
 /apps/pipeline/.phpunit.cache/
+/apps/whatsapp-service/.phpunit.cache/
 
 # Secrets — only *.example is committed
 .env
 .env.local
 !.env.example
+
+# WAHA pairing session persistence (mounted into the waha service)
+/.sessions/
 
 # Node (experiments only)
 /experiments/node_modules/

@@ -40,24 +40,45 @@ services:
       timeout: 5s
       retries: 10
 
-  # --- Future ports (documented placeholders, intentionally disabled this session) ---
+  # --- WhatsApp publish surface (ADR 0001) ---
   #
-  # The publish surface is out of scope for this build (the Publish button is a stub
-  # calling a NullChannelPublisher). When the validated `whatsapp-announcer` PoC is
-  # ported to its own PHP container, these come online and the ChannelPublisher
-  # interface's real implementation points the app at `whatsapp-service`.
-  #
-  # waha:
-  #   image: devlikeapro/waha:latest
-  #   ports:
-  #     - "3000:3000"
-  #
-  # whatsapp-service:
-  #   build:
-  #     context: .
-  #     dockerfile: apps/whatsapp-service/Dockerfile   # future PHP port of whatsapp-announcer
-  #   depends_on:
-  #     - waha
+  # WAHA is the Dockerized, unofficial WhatsApp-Web HTTP bridge. whatsapp-service is
+  # the standalone gateway (no DB, no packages/shared) and the only component that
+  # holds WAHA credentials and talks to it; the pipeline calls it over HTTP.
+  waha:
+    image: devlikeapro/waha:chrome      # NOT :latest — :chrome bundles the engine
+    platform: linux/amd64               # required on arm64 hosts
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"           # host-local only
+    environment:
+      WAHA_API_KEY: ${WAHA_API_KEY}
+      WHATSAPP_DEFAULT_ENGINE: WEBJS
+      WHATSAPP_DOWNLOAD_MEDIA: "false"
+      WAHA_DASHBOARD_USERNAME: admin
+      WAHA_DASHBOARD_PASSWORD: ${WAHA_DASHBOARD_PASSWORD}
+      WHATSAPP_SWAGGER_USERNAME: admin
+      WHATSAPP_SWAGGER_PASSWORD: ${WAHA_DASHBOARD_PASSWORD}
+    volumes:
+      - ./.sessions:/app/.sessions      # pairing persistence
+
+  whatsapp-service:
+    build:
+      context: .
+      dockerfile: apps/whatsapp-service/Dockerfile
+    # Mount the monorepo so vendor/ (built by `composer install`) resolves at runtime,
+    # mirroring the pipeline service.
+    volumes:
+      - .:/app
+    working_dir: /app/apps/whatsapp-service
+    ports:
+      - "8001:8000"                     # distinct from the pipeline's 8000
+    environment:
+      WAHA_URL: http://waha:3000
+      WAHA_API_KEY: ${WAHA_API_KEY}
+      WAHA_SESSION: default
+    depends_on:
+      - waha
 
 volumes:
   postgres_data:
