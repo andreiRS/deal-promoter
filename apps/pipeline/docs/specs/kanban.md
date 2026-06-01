@@ -8,8 +8,7 @@ All slices are **unattended** (decisions were resolved up front; the only deferr
 
 ### 📋 To Do
 
-- [ ] **P8** — Review web page
-- [ ] **P9** — Publish button stub + `ChannelPublisher` seam
+_(none)_
 
 ### 🚧 In Progress
 
@@ -24,6 +23,8 @@ _(none)_
 - [x] **P5** — Creators SDK + `CreatorsClient` + Live Snapshot (`7f0ab9b`)
 - [x] **P6** — Already-Posted Guard (`b0804bd`)
 - [x] **P7** — `app:run-cycle` orchestration + run-lock + record (`a190343`)
+- [x] **P8** — Review web page (`d3b8c44`)
+- [x] **P9** — Publish button stub + `ChannelPublisher` seam (`3a7c455`)
 
 ## Dependency order
 
