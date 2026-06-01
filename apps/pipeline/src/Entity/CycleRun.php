@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Entity;
 
+use App\Repository\CycleRunRepository;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
@@ -12,7 +13,7 @@ use Doctrine\ORM\Mapping as ORM;
  * One Cycle: a single discovery-to-review run. Holds the funnel counts and owns
  * the FoundDeal rows it produced.
  */
-#[ORM\Entity]
+#[ORM\Entity(repositoryClass: CycleRunRepository::class)]
 #[ORM\Table(name: 'cycle_run')]
 class CycleRun
 {

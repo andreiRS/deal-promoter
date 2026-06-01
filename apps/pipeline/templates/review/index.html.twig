@@ -1,0 +1,95 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Deal Review{% endblock %}
+
+{% block body %}
+    <h1>Deal Review</h1>
+
+    {% if cycle is null %}
+        <p class="empty">No cycle has run yet.</p>
+    {% else %}
+        <p>
+            Latest cycle #{{ cycle.id }} &mdash; started {{ cycle.startedAt|date('Y-m-d H:i') }}
+            (raw {{ cycle.rawCount }}, surviving {{ cycle.survivingCount }}, snapshotted {{ cycle.snapshottedCount }}).
+        </p>
+
+        {% if cycle.foundDeals is empty %}
+            <p class="empty">No found deals in this cycle.</p>
+        {% else %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Image</th>
+                        <th>Title</th>
+                        <th>Price</th>
+                        <th>Keepa %</th>
+                        <th>Keepa avg90</th>
+                        <th>Amazon savings</th>
+                        <th>Basis</th>
+                        <th>Deal details</th>
+                        <th>MAP violation</th>
+                        <th>Availability</th>
+                        <th>Condition</th>
+                        <th>Merchant</th>
+                        <th>Link</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for deal in cycle.foundDeals %}
+                        <tr>
+                            <td>
+                                {% if deal.imageUrl %}
+                                    <img src="{{ deal.imageUrl }}" alt="{{ deal.title }}">
+                                {% else %}
+                                    &mdash;
+                                {% endif %}
+                            </td>
+                            <td>{{ deal.title }}</td>
+                            <td>
+                                {% if deal.snapshotPriceCents is not null %}
+                                    {{ (deal.snapshotPriceCents / 100)|number_format(2, '.', '') }}
+                                {% else %}
+                                    &mdash;
+                                {% endif %}
+                            </td>
+                            <td>{{ deal.keepaDropPct is not null ? deal.keepaDropPct ~ '%' : '—' }}</td>
+                            <td>
+                                {% if deal.keepaAvg90Cents is not null %}
+                                    {{ (deal.keepaAvg90Cents / 100)|number_format(2, '.', '') }}
+                                {% else %}
+                                    &mdash;
+                                {% endif %}
+                            </td>
+                            <td>{{ deal.amazonSavingsPct is not null ? deal.amazonSavingsPct ~ '%' : '—' }}</td>
+                            <td>{{ deal.savingBasisType ?? '—' }}</td>
+                            <td>
+                                {% if deal.hasDealDetails is null %}
+                                    &mdash;
+                                {% else %}
+                                    {{ deal.hasDealDetails ? 'yes' : 'no' }}
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if deal.violatesMap is null %}
+                                    &mdash;
+                                {% else %}
+                                    {{ deal.violatesMap ? 'yes' : 'no' }}
+                                {% endif %}
+                            </td>
+                            <td>{{ deal.availability ?? '—' }}</td>
+                            <td>{{ deal.condition ?? '—' }}</td>
+                            <td>{{ deal.merchantId ?? '—' }}</td>
+                            <td>
+                                {% if deal.affiliateUrl %}
+                                    <a href="{{ deal.affiliateUrl }}" rel="nofollow noopener" target="_blank">Open</a>
+                                {% else %}
+                                    &mdash;
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+    {% endif %}
+{% endblock %}

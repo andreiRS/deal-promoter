@@ -209,7 +209,7 @@ P2, P3, P4, P5, P6.
 
 ### What to build
 
-A minimal Symfony controller + template, served by the built-in server in the `app` container, that reads the **latest** `cycle_run` and renders its `found_deal` rows as a read-only review table: title, image, price, Keepa %, Amazon `savings` + `savingBasisType`, attestation flags (`dealDetails`/`WAS_PRICE`), availability/condition/merchant, and the affiliate link. Sorted by score. No verdict column.
+A minimal Symfony controller + template, served by the built-in server in the `app` container, that reads the **latest** `cycle_run` and renders its `found_deal` rows as a read-only review table: title, image, price, Keepa %, Amazon `savings` + `savingBasisType`, attestation flags (`dealDetails`/`WAS_PRICE`), availability/condition/merchant, and the affiliate link. No verdict column. No sorting — rows render in their natural recorded order.
 
 ### Acceptance criteria
 
