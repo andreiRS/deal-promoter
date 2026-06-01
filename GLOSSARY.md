@@ -66,6 +66,12 @@ The headless, scheduled process that runs a [Cycle](#cycle) end to end. The firs
 
 The counterpart to [Price Validity](#price-validity): a [Live Snapshot](#live-snapshot) proves validity but **cannot** prove magnitude.
 
+## Gateway
+
+The stateless service (`whatsapp-service`) that delivers a text message to the [Channel](#channel) through [WAHA](#waha), and the only component that holds the WAHA credentials. It is told a channel and a text and sends them, enforcing only that the destination is a `@newsletter` channel; it knows nothing about deals, prices, or [Recorded Price History](#recorded-price-history).
+
+Distinct from the [Deal Pipeline](#deal-pipeline), which decides *what* and *when* to publish: the Gateway is the dumb last mile the Pipeline drives. The Pipeline owns the [Deal Gate](#deal-gate) decision and the record; the Gateway owns delivery only.
+
 ## Live Snapshot
 
 The live Creators API call (`GetItems` with `OffersV2`) taken for a surviving [Candidate](#candidate) immediately before publish, and the bundle of facts it returns: live [Buy Box](#buy-box) price, availability, condition, merchant, and any [Amazon Attestation](#amazon-attestation). Carries **no verdict** — it only reports the current truth.
@@ -113,3 +119,9 @@ A Reference Price establishes magnitude, never [Price Validity](#price-validity)
 ## Repost Policy
 
 The rule for when an already-posted ASIN may be posted again. Leading shape: post once, then a cooldown, then re-post only on a meaningful further drop below the last posted price. Enforced by the [Already-Posted Guard](#already-posted-guard).
+
+## WAHA
+
+The third-party Dockerized HTTP bridge that drives a logged-in WhatsApp account through WhatsApp Web, exposing send, session, and channel operations over HTTP. The [Gateway](#gateway) is the only component that talks to it.
+
+Unofficial and the single most fragile dependency: it carries a ban risk and its session can drop, which is why the architecture isolates it behind the [Gateway](#gateway) and keeps the rest of the system fail-safe around it. Not an official WhatsApp API.
