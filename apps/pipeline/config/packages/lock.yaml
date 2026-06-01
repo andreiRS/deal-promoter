@@ -1,0 +1,25 @@
+# Run-lock: a Postgres advisory lock so two Cycles never overlap.
+#
+# Wired manually (rather than a framework `lock` DSN) so it reuses the EXISTING
+# DBAL connection — no extra LOCK_DSN env key, no lock table. The store uses
+# Postgres advisory locks, which auto-release on connection loss.
+services:
+    # Advisory-lock store over the default Doctrine DBAL connection.
+    deal_pipeline.lock_store:
+        class: Symfony\Component\Lock\Store\DoctrineDbalPostgreSqlStore
+        arguments:
+            $connOrUrl: '@doctrine.dbal.default_connection'
+
+    # The factory the Cycle command injects to create the named run-lock.
+    Symfony\Component\Lock\LockFactory:
+        arguments:
+            $store: '@deal_pipeline.lock_store'
+
+when@test:
+    services:
+        # Public so the Cycle integration test can hold the run-lock and prove a
+        # concurrent Cycle is rejected.
+        Symfony\Component\Lock\LockFactory:
+            arguments:
+                $store: '@deal_pipeline.lock_store'
+            public: true

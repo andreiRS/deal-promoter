@@ -1,0 +1,137 @@
+{
+  "itemsResult": {
+    "items": [
+      {
+        "asin": "B08B45VD31",
+        "detailPageURL": "https://www.amazon.de/dp/B08B45VD31?tag=shahsiahde-21&linkCode=ogi&th=1&psc=1",
+        "itemInfo": {
+          "title": {
+            "displayValue": "Sackboy: A Big Adventure - [PlayStation 5]",
+            "label": "Title",
+            "locale": "de_DE"
+          }
+        },
+        "offersV2": {
+          "listings": [
+            {
+              "availability": {
+                "maxOrderQuantity": 6,
+                "message": "Auf Lager",
+                "minOrderQuantity": 1,
+                "type": "IN_STOCK"
+              },
+              "condition": {
+                "conditionNote": "",
+                "subCondition": "Unknown",
+                "value": "New"
+              },
+              "dealDetails": {
+                "accessType": "ALL",
+                "badge": "Befristetes Angebot",
+                "endTime": "2026-06-10T21:59:59Z",
+                "startTime": "2026-05-26T22:00:00Z"
+              },
+              "isBuyBoxWinner": true,
+              "merchantInfo": {
+                "id": "A3JWKAKR8XB7XF",
+                "name": "Amazon"
+              },
+              "price": {
+                "money": {
+                  "amount": 24.99,
+                  "currency": "EUR",
+                  "displayAmount": "24,99 €"
+                },
+                "savingBasis": {
+                  "money": {
+                    "amount": 69.99,
+                    "currency": "EUR",
+                    "displayAmount": "69,99 €"
+                  },
+                  "savingBasisType": "LIST_PRICE",
+                  "savingBasisTypeLabel": "UVP:"
+                },
+                "savings": {
+                  "money": {
+                    "amount": 45,
+                    "currency": "EUR",
+                    "displayAmount": "45,00 €"
+                  },
+                  "percentage": 64
+                }
+              },
+              "violatesMAP": false
+            },
+            {
+              "availability": {
+                "maxOrderQuantity": 1,
+                "message": "Nur noch 1 auf Lager",
+                "minOrderQuantity": 1,
+                "type": "IN_STOCK_SCARCE"
+              },
+              "condition": {
+                "conditionNote": "",
+                "subCondition": "LikeNew",
+                "value": "Used"
+              },
+              "isBuyBoxWinner": false,
+              "merchantInfo": {
+                "id": "A8KICS1PHF7ZO",
+                "name": "Amazon Retourenkauf"
+              },
+              "price": {
+                "money": {
+                  "amount": 24.49,
+                  "currency": "EUR",
+                  "displayAmount": "24,49 €"
+                }
+              },
+              "violatesMAP": false
+            }
+          ]
+        }
+      },
+      {
+        "asin": "B0010AH4BW",
+        "detailPageURL": "https://www.amazon.de/dp/B0010AH4BW?tag=shahsiahde-21&linkCode=ogi&th=1&psc=1",
+        "itemInfo": {
+          "title": {
+            "displayValue": "Bosch Automotive 0280217117 Luftmassenmesser",
+            "label": "Title",
+            "locale": "de_DE"
+          }
+        },
+        "offersV2": {
+          "listings": [
+            {
+              "availability": {
+                "maxOrderQuantity": 1,
+                "message": "Gewöhnlich versandfertig in 2 bis 3 Tagen",
+                "minOrderQuantity": 1,
+                "type": "LEADTIME"
+              },
+              "condition": {
+                "conditionNote": "",
+                "subCondition": "Unknown",
+                "value": "New"
+              },
+              "isBuyBoxWinner": true,
+              "merchantInfo": {
+                "id": "A214PD1BHHXE2W",
+                "name": "AUTODOC Shop"
+              },
+              "price": {
+                "money": {
+                  "amount": 1219.27,
+                  "currency": "EUR",
+                  "displayAmount": "1.219,27 €"
+                }
+              },
+              "violatesMAP": false
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

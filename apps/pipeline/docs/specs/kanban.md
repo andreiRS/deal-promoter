@@ -8,15 +8,7 @@ All slices are **unattended** (decisions were resolved up front; the only deferr
 
 ### 📋 To Do
 
-- [ ] **P1** — Monorepo + Docker skeleton
-- [ ] **P2** — Postgres + Doctrine + storage interface + schema
-- [ ] **P3** — Keepa client (hand-rolled)
-- [ ] **P4** — Pre-filter: Criteria + Outlier Guards
-- [ ] **P5** — Creators SDK + `CreatorsClient` + Live Snapshot
-- [ ] **P6** — Already-Posted Guard
-- [ ] **P7** — `app:run-cycle` orchestration + run-lock + record
-- [ ] **P8** — Review web page
-- [ ] **P9** — Publish button stub + `ChannelPublisher` seam
+_(none)_
 
 ### 🚧 In Progress
 
@@ -24,7 +16,15 @@ _(none)_
 
 ### ✅ Done
 
-_(none)_
+- [x] **P1** — Monorepo + Docker skeleton (`70dc85b`)
+- [x] **P3** — Keepa client (hand-rolled) (`7bd7df3`, baseline QA fix `cc1b35a`)
+- [x] **P4** — Pre-filter: Criteria + Outlier Guards (`3b83e93`)
+- [x] **P2** — Postgres + Doctrine + storage interface + schema (`3996f2f`)
+- [x] **P5** — Creators SDK + `CreatorsClient` + Live Snapshot (`7f0ab9b`)
+- [x] **P6** — Already-Posted Guard (`b0804bd`)
+- [x] **P7** — `app:run-cycle` orchestration + run-lock + record (`a190343`)
+- [x] **P8** — Review web page (`d3b8c44`)
+- [x] **P9** — Publish button stub + `ChannelPublisher` seam (`3a7c455`)
 
 ## Dependency order
 
@@ -210,7 +210,7 @@ P2, P3, P4, P5, P6.
 
 ### What to build
 
-A minimal Symfony controller + template, served by the built-in server in the `app` container, that reads the **latest** `cycle_run` and renders its `found_deal` rows as a read-only review table: title, image, price, Keepa %, Amazon `savings` + `savingBasisType`, attestation flags (`dealDetails`/`WAS_PRICE`), availability/condition/merchant, and the affiliate link. Sorted by score. No verdict column.
+A minimal Symfony controller + template, served by the built-in server in the `app` container, that reads the **latest** `cycle_run` and renders its `found_deal` rows as a read-only review table: title, image, price, Keepa %, Amazon `savings` + `savingBasisType`, attestation flags (`dealDetails`/`WAS_PRICE`), availability/condition/merchant, and the affiliate link. No verdict column. No sorting — rows render in their natural recorded order.
 
 ### Acceptance criteria
 

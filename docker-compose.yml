@@ -1,0 +1,63 @@
+# One root compose for the Deal Pipeline build.
+#   app      — PHP 8.5, runs both `bin/console app:run-cycle` and the review page.
+#   postgres — the datastore (cycle_run / found_deal / posted_deal).
+# The whole monorepo is mounted into `app` so the packages/shared path repo resolves.
+services:
+  app:
+    build:
+      context: .
+      dockerfile: apps/pipeline/Dockerfile
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # Reach postgres over the compose network rather than localhost.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-deal_promoter}:${POSTGRES_PASSWORD:-deal_promoter}@postgres:5432/${POSTGRES_DB:-deal_promoter}?serverVersion=16&charset=utf8
+    volumes:
+      - .:/app
+    working_dir: /app/apps/pipeline
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-deal_promoter}
+      POSTGRES_USER: ${POSTGRES_USER:-deal_promoter}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-deal_promoter}
+    ports:
+      # Host 5434 -> container 5432 (lower ports are often taken by local Postgres);
+      # the app reaches postgres on 5432 over the compose network regardless.
+      - "5434:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-deal_promoter} -d ${POSTGRES_DB:-deal_promoter}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # --- Future ports (documented placeholders, intentionally disabled this session) ---
+  #
+  # The publish surface is out of scope for this build (the Publish button is a stub
+  # calling a NullChannelPublisher). When the validated `whatsapp-announcer` PoC is
+  # ported to its own PHP container, these come online and the ChannelPublisher
+  # interface's real implementation points the app at `whatsapp-service`.
+  #
+  # waha:
+  #   image: devlikeapro/waha:latest
+  #   ports:
+  #     - "3000:3000"
+  #
+  # whatsapp-service:
+  #   build:
+  #     context: .
+  #     dockerfile: apps/whatsapp-service/Dockerfile   # future PHP port of whatsapp-announcer
+  #   depends_on:
+  #     - waha
+
+volumes:
+  postgres_data:

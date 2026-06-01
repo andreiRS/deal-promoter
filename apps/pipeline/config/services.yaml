@@ -1,0 +1,100 @@
+parameters:
+
+services:
+    _defaults:
+        autowire: true
+        autoconfigure: true
+
+    App\:
+        resource: '../src/'
+        exclude:
+            - '../src/Kernel.php'
+            # Doctrine entities are not services.
+            - '../src/Entity/'
+            # PreFilterFactory takes array params; wired in pre_filter.yaml.
+            - '../src/PreFilter/'
+
+    # packages/shared is mostly value objects / DTOs / enums (PreFilter,
+    # Keepa Candidate/DealPage/TokenMeter) which must NOT be autowired as
+    # services. Only the storage contracts live under Shared\Storage; their
+    # implementations are app-side, so nothing is registered from shared here.
+
+    # Bind the swappable persistence seam to its Doctrine-backed implementation.
+    DealPromoter\Shared\Storage\RecordedPriceHistory: '@App\Storage\DoctrineRecordedPriceHistory'
+
+    # --- Already-Posted Guard (P6) ---
+    # The guard lives in packages/shared and is not covered by the App\ glob.
+    # Register it explicitly so the container can construct it (P7 will consume it).
+    DealPromoter\Shared\AlreadyPosted\AlreadyPostedGuard: ~
+
+    # Default Repost Policy: a posted ASIN is always suppressed.
+    # Bind the interface so the guard autowires the policy.
+    DealPromoter\Shared\AlreadyPosted\RepostPolicy: '@DealPromoter\Shared\AlreadyPosted\NeverRepostPolicy'
+    DealPromoter\Shared\AlreadyPosted\NeverRepostPolicy: ~
+
+    # --- Live Snapshot (Amazon CreatorsAPI) ---
+    # The SDK's DefaultApi is built by a factory from plain env credentials.
+    # The live HTTP call is a [manual] smoke; tests inject a mocked DefaultApi.
+    App\Creators\DefaultApiFactory:
+        arguments:
+            $credentialId: '%env(CREATORS_CREDENTIAL_ID)%'
+            $credentialSecret: '%env(CREATORS_CREDENTIAL_SECRET)%'
+            $version: '%env(CREATORS_VERSION)%'
+
+    Amazon\CreatorsAPI\v1\com\amazon\creators\api\DefaultApi:
+        factory: ['@App\Creators\DefaultApiFactory', 'create']
+
+    App\Creators\SdkCreatorsClient:
+        arguments:
+            $api: '@Amazon\CreatorsAPI\v1\com\amazon\creators\api\DefaultApi'
+            $partnerTag: '%env(AMAZON_PARTNER_TAG)%'
+            $marketplace: '%env(CREATORS_MARKETPLACE)%'
+            $cap: 10 # one GetItems batch per cycle, under the ~1 TPS floor quota; raise as the quota grows
+            # Steady-pace batches under the ~1 TPS floor quota; retry a throttled
+            # batch with exponential backoff before the cycle fail-safe skips it.
+            $throttleMicros: 1100000 # ~1.1s between GetItems calls (lower as quota grows)
+            $maxRetries: 3
+            $backoffBaseMicros: 1000000 # first 429 backoff: 1s, then 2s, 4s
+
+    # The pipeline depends on the interface, not the SDK.
+    DealPromoter\Shared\Creators\CreatorsClient: '@App\Creators\SdkCreatorsClient'
+
+    # --- Keepa discovery (P3) ---
+    # KeepaClient lives in packages/shared (not autowired); build it from env.
+    DealPromoter\Shared\Keepa\KeepaClient:
+        arguments:
+            $http: '@Symfony\Contracts\HttpClient\HttpClientInterface'
+            $apiKey: '%env(KEEPA_API_KEY)%'
+            $domain: '%env(int:KEEPA_DOMAIN)%'
+
+    # The Cycle depends on the discovery seam, not the concrete client.
+    DealPromoter\Shared\Keepa\KeepaDiscovery: '@DealPromoter\Shared\Keepa\KeepaClient'
+
+    # --- Publish channel seam (P9) ---
+    # NullChannelPublisher logs intent and makes no real HTTP call.
+    # Swap the alias here to wire a real publisher with no controller/template change.
+    DealPromoter\Shared\Channel\ChannelPublisher: '@App\Channel\NullChannelPublisher'
+
+when@test:
+    services:
+        # Expose the storage seam to the test container so the integration test
+        # can resolve the interface and prove the interface -> impl wiring.
+        # (No consumer exists yet, so the alias would otherwise be inlined away.)
+        DealPromoter\Shared\Storage\RecordedPriceHistory:
+            alias: App\Storage\DoctrineRecordedPriceHistory
+            public: true
+
+        # Expose the Already-Posted Guard so integration tests can verify it
+        # wires end-to-end through the real Doctrine storage. Re-state its
+        # autowired arguments here: a bare `public: true` would reset the
+        # definition and drop them.
+        DealPromoter\Shared\AlreadyPosted\AlreadyPostedGuard:
+            arguments:
+                $history: '@DealPromoter\Shared\Storage\RecordedPriceHistory'
+                $policy: '@DealPromoter\Shared\AlreadyPosted\RepostPolicy'
+            public: true
+
+        # Expose the channel seam so tests can assert the interface → impl binding.
+        DealPromoter\Shared\Channel\ChannelPublisher:
+            alias: App\Channel\NullChannelPublisher
+            public: true

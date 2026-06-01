@@ -225,10 +225,33 @@ affiliate link we post is the one this API returns, not a hand-built URL.
   - **One call = one transaction regardless of payload**, so a 10-ASIN GetItems is 1 transaction.
     Batching to 10 is the single biggest efficiency lever and lines up perfectly with our
     "deep-validate only survivors" funnel.
+  - **CONFIRMED from the Creators API FAQ (2026-06-01):** "you can specify multiple item ids
+    (**upto 10**) for GetItems API and multiple BrowseNode Ids (upto 10) for GetBrowseNodes API."
+    So the 10-per-call ceiling is Creators-native, not just inherited PA-API lore. The SDK enforces
+    it (`GetItemsRequestContent` rejects `itemIds` > 10); our client chunks at `BATCH_SIZE = 10`.
 - **Throttling**: exceeding TPS or TPD returns **HTTP 429 `TooManyRequests`** (also returned when
   access is revoked). TPD exhaustion 429s even when under TPS. Use exponential backoff with
   jitter (Amazon gives no required constants, CONFIRM ours) and spread calls across the day; our
   cron cadence plus per-cycle caps already smooth this.
+- **CONFIRMED by the live smoke (exp09 follow-up, 2026-06-01): the per-second burst is the real
+  constraint, not the daily total.** With 99 survivors and no spacing, `SdkCreatorsClient` fired
+  `ceil(99/10) = 10` GetItems calls back-to-back; at the 1 TPS floor that is a 10x burst in ~1s →
+  immediate **429**. The daily ceiling was never close: `8640 TPD ÷ ~10 calls/cycle ≈ 864
+  cycles/day` even at the floor quota. The SDK surfaces a 429 as an
+  `Amazon\CreatorsAPI\v1\ApiException` with `getCode() === 429` (Guzzle's `RequestException`
+  re-wrapped); **GetItems does not return a `ThrottleExceptionResponseContent` object, it throws.**
+  - **Fix shipped in `SdkCreatorsClient` (TDD, 2026-06-01):** two knobs wired in `services.yaml`
+    via a `Sleeper` seam (so waits are testable without real delays):
+    - `$throttleMicros` — steady pace between batches (prod `1_100_000` ≈ 1.1s, just over the 1 TPS
+      floor; **lower it as quota grows**). Never sleeps before the first or after the last batch.
+    - `$maxRetries` (3) + `$backoffBaseMicros` (`1_000_000`) — retry a throttled batch with
+      exponential backoff (1s, 2s, 4s). Only a **429** is retried; any other `ApiException` (e.g.
+      400) surfaces immediately, and a 429 that outlasts the retries is rethrown so P7's fail-safe
+      skips the whole cycle (no partial `cycle_run`). `$cap` remains the manual one-batch override.
+  - **No `Retry-After` / rate-limit headers were observed** on the GetItems response (exp09), so
+    the backoff schedule is our own constant, not server-driven. Revisit if Amazon starts sending
+    `Retry-After`. Jitter is not yet added (single-caller cron, low collision risk) — CONFIRM if we
+    ever run concurrent cycles.
 - **Caching rules (official, and a freshness hint):** Amazon permits caching **Offers /
   BrowseNodeInfo for 1 hour** and most other data for 1 day; caching customer-derived data is
   prohibited. The 1-hour offers allowance is a strong signal that **prices are "recent and
@@ -323,8 +346,10 @@ affiliate link we post is the one this API returns, not a hand-built URL.
   (shared open question with the WAHA work).
 - Pin the real **deprecation/cutover dates** and make sure we are on the Creators (OAuth) path,
   not the SigV4 PA-API, before the retirement.
-- Decide retry/backoff constants and per-cycle GetItems budget given our TPS/TPD and Keepa
-  survivor volume.
+- ~~Decide retry/backoff constants and per-cycle GetItems budget given our TPS/TPD and Keepa
+  survivor volume.~~ **DONE (2026-06-01):** throttle `1.1s`/batch + backoff `1s/2s/4s` in
+  `SdkCreatorsClient` (see §4). Open: add jitter / lower the interval as quota grows; pin a
+  per-cycle GetItems budget if survivor volume spikes.
 - Build the **amazon.de category -> commission-rate table** (from Partnernet, not the API) if we
   rank deals by expected earnings.
 
@@ -342,6 +367,8 @@ affiliate link we post is the one this API returns, not a hand-built URL.
   https://webservices.amazon.com/paapi5/documentation/offersV2.html
 - Prime Exclusive Deal Pricing use case (real GetItems + OffersV2 buy-box + DealDetails logic):
   https://webservices.amazon.com/paapi5/documentation/use-cases/prime-exclusive-deal-pricing.html
+- Creators API FAQ (batching: up to 10 item ids per GetItems / 10 node ids per GetBrowseNodes):
+  https://affiliate-program.amazon.com/creatorsapi/docs/en-us/faq
 - API Rates (TPS/TPD, dynamic quota, 30-day rule, 429):
   https://webservices.amazon.com/paapi5/documentation/troubleshooting/api-rates.html
 - Best Programming Practices (batching, TPS smoothing, cache TTLs):

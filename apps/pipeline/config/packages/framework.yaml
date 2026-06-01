@@ -1,0 +1,17 @@
+framework:
+    secret: '%env(APP_SECRET)%'
+    http_method_override: false
+    handle_all_throwables: true
+    php_errors:
+        log: true
+    # Registers the HttpClientInterface autowiring alias used by the Keepa client.
+    http_client: ~
+    # Sessions are required for flash messages (Publish button, P9).
+    session:
+        handler_id: null
+        cookie_secure: auto
+        cookie_samesite: lax
+
+when@test:
+    framework:
+        test: true
