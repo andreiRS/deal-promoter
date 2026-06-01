@@ -1,1 +1,18 @@
 .idea/
+
+# PHP / Composer
+/apps/pipeline/vendor/
+/packages/shared/vendor/
+/apps/pipeline/var/
+/apps/pipeline/config/reference.php
+/apps/pipeline/.php-cs-fixer.cache
+/apps/pipeline/.phpunit.result.cache
+/apps/pipeline/.phpunit.cache/
+
+# Secrets — only *.example is committed
+.env
+.env.local
+!.env.example
+
+# Node (experiments only)
+/experiments/node_modules/
