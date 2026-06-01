@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Entity;
 
+use DealPromoter\Shared\Channel\PublishableDeal;
 use Doctrine\ORM\Mapping as ORM;
 
 /**
@@ -12,11 +13,14 @@ use Doctrine\ORM\Mapping as ORM;
  * The snapshot columns (price, availability, condition, merchant, savings, deal
  * flags, affiliate URL) are nullable: they are populated later by the Live
  * Snapshot (P5/P7). All money is integer euro-cents; percentages are integers.
+ *
+ * Implements PublishableDeal so it can be passed directly to any ChannelPublisher
+ * without an extra adapter; the four required getters already existed.
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'found_deal')]
 #[ORM\Index(name: 'idx_found_deal_asin', columns: ['asin'])]
-class FoundDeal
+class FoundDeal implements PublishableDeal
 {
     #[ORM\Id]
     #[ORM\GeneratedValue]
@@ -71,6 +75,14 @@ class FoundDeal
 
     #[ORM\Column(name: 'created_at', type: 'datetime_immutable')]
     private \DateTimeImmutable $createdAt;
+
+    /**
+     * Set by the Publish endpoint stub (P9) to mark that publish was requested.
+     * Kept distinct from posted_deal: this records intent; a real ChannelPublisher
+     * writes a posted_deal row only after a successful channel delivery.
+     */
+    #[ORM\Column(name: 'publish_requested_at', type: 'datetime_immutable', nullable: true)]
+    private ?\DateTimeImmutable $publishRequestedAt = null;
 
     public function __construct(string $asin, string $title, \DateTimeImmutable $createdAt)
     {
@@ -227,5 +239,15 @@ class FoundDeal
     public function getCreatedAt(): \DateTimeImmutable
     {
         return $this->createdAt;
+    }
+
+    public function getPublishRequestedAt(): ?\DateTimeImmutable
+    {
+        return $this->publishRequestedAt;
+    }
+
+    public function markPublishRequested(\DateTimeImmutable $at): void
+    {
+        $this->publishRequestedAt = $at;
     }
 }

@@ -5,6 +5,11 @@
 {% block body %}
     <h1>Deal Review</h1>
 
+    {# Flash messages #}
+    {% for message in app.flashes('success') %}
+        <div class="flash-success">{{ message }}</div>
+    {% endfor %}
+
     {% if cycle is null %}
         <p class="empty">No cycle has run yet.</p>
     {% else %}
@@ -32,6 +37,7 @@
                         <th>Condition</th>
                         <th>Merchant</th>
                         <th>Link</th>
+                        <th>Publish</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -84,6 +90,16 @@
                                     <a href="{{ deal.affiliateUrl }}" rel="nofollow noopener" target="_blank">Open</a>
                                 {% else %}
                                     &mdash;
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if deal.publishRequestedAt is not null %}
+                                    Publish requested ({{ deal.publishRequestedAt|date('Y-m-d H:i') }})
+                                {% else %}
+                                    {# TODO: CSRF when auth lands #}
+                                    <form method="post" action="{{ path('publish_deal', {id: deal.id}) }}">
+                                        <button type="submit">Publish</button>
+                                    </form>
                                 {% endif %}
                             </td>
                         </tr>

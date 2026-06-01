@@ -65,6 +65,11 @@ services:
     # The Cycle depends on the discovery seam, not the concrete client.
     DealPromoter\Shared\Keepa\KeepaDiscovery: '@DealPromoter\Shared\Keepa\KeepaClient'
 
+    # --- Publish channel seam (P9) ---
+    # NullChannelPublisher logs intent and makes no real HTTP call.
+    # Swap the alias here to wire a real publisher with no controller/template change.
+    DealPromoter\Shared\Channel\ChannelPublisher: '@App\Channel\NullChannelPublisher'
+
 when@test:
     services:
         # Expose the storage seam to the test container so the integration test
@@ -82,4 +87,9 @@ when@test:
             arguments:
                 $history: '@DealPromoter\Shared\Storage\RecordedPriceHistory'
                 $policy: '@DealPromoter\Shared\AlreadyPosted\RepostPolicy'
+            public: true
+
+        # Expose the channel seam so tests can assert the interface → impl binding.
+        DealPromoter\Shared\Channel\ChannelPublisher:
+            alias: App\Channel\NullChannelPublisher
             public: true
