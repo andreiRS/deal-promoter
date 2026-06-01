@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace DealPromoter\Shared\PreFilter;
 
+use DealPromoter\Shared\Config\Coerce;
+
 /**
  * Tunables for the four Outlier Guards. Defaults are the constants the funnel
  * experiments settled on (see experiments/05-funnel-dryrun/analyze.ts).
@@ -31,33 +33,10 @@ final readonly class GuardThresholds
         $defaults = new self();
 
         return new self(
-            spikeRatio: self::floatOr($config, 'spikeRatio', $defaults->spikeRatio),
-            minSalesRankDrops90: self::intOr($config, 'minSalesRankDrops90', $defaults->minSalesRankDrops90),
-            absPriceFloorCents: self::intOr($config, 'absPriceFloorCents', $defaults->absPriceFloorCents),
-            maxClaimedDropPercent: self::intOr($config, 'maxClaimedDropPercent', $defaults->maxClaimedDropPercent),
+            spikeRatio: Coerce::float($config, 'spikeRatio', $defaults->spikeRatio),
+            minSalesRankDrops90: Coerce::int($config, 'minSalesRankDrops90', $defaults->minSalesRankDrops90),
+            absPriceFloorCents: Coerce::int($config, 'absPriceFloorCents', $defaults->absPriceFloorCents),
+            maxClaimedDropPercent: Coerce::int($config, 'maxClaimedDropPercent', $defaults->maxClaimedDropPercent),
         );
-    }
-
-    /**
-     * @param array<string, mixed> $config
-     */
-    private static function floatOr(array $config, string $key, float $default): float
-    {
-        $value = $config[$key] ?? null;
-        if (\is_int($value)) {
-            return (float) $value;
-        }
-
-        return \is_float($value) ? $value : $default;
-    }
-
-    /**
-     * @param array<string, mixed> $config
-     */
-    private static function intOr(array $config, string $key, int $default): int
-    {
-        $value = $config[$key] ?? null;
-
-        return \is_int($value) ? $value : $default;
     }
 }

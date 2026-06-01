@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace DealPromoter\Shared\PreFilter;
 
+use DealPromoter\Shared\Config\Coerce;
+
 /**
  * Positive inclusion thresholds: "is this the kind of deal we want?".
  *
@@ -42,51 +44,12 @@ final readonly class Criteria
         $defaults = new self();
 
         return new self(
-            minDiscountPercent: self::intOr($config, 'minDiscountPercent', $defaults->minDiscountPercent),
-            minPriceCents: self::intOr($config, 'minPriceCents', $defaults->minPriceCents),
-            maxPriceCents: self::nullableIntOr($config, 'maxPriceCents', $defaults->maxPriceCents),
-            maxSalesRank: self::nullableIntOr($config, 'maxSalesRank', $defaults->maxSalesRank),
-            allowedRootCategories: self::intListOr($config, 'allowedRootCategories', $defaults->allowedRootCategories),
-            minRatingStarsTimesTen: self::nullableIntOr($config, 'minRatingStarsTimesTen', $defaults->minRatingStarsTimesTen),
+            minDiscountPercent: Coerce::int($config, 'minDiscountPercent', $defaults->minDiscountPercent),
+            minPriceCents: Coerce::int($config, 'minPriceCents', $defaults->minPriceCents),
+            maxPriceCents: Coerce::nullableInt($config, 'maxPriceCents', $defaults->maxPriceCents),
+            maxSalesRank: Coerce::nullableInt($config, 'maxSalesRank', $defaults->maxSalesRank),
+            allowedRootCategories: Coerce::intList($config, 'allowedRootCategories', $defaults->allowedRootCategories),
+            minRatingStarsTimesTen: Coerce::nullableInt($config, 'minRatingStarsTimesTen', $defaults->minRatingStarsTimesTen),
         );
-    }
-
-    /**
-     * @param array<string, mixed> $config
-     */
-    private static function intOr(array $config, string $key, int $default): int
-    {
-        $value = $config[$key] ?? null;
-
-        return \is_int($value) ? $value : $default;
-    }
-
-    /**
-     * @param array<string, mixed> $config
-     */
-    private static function nullableIntOr(array $config, string $key, ?int $default): ?int
-    {
-        if (!\array_key_exists($key, $config)) {
-            return $default;
-        }
-        $value = $config[$key];
-
-        return \is_int($value) ? $value : null;
-    }
-
-    /**
-     * @param array<string, mixed> $config
-     * @param list<int>            $default
-     *
-     * @return list<int>
-     */
-    private static function intListOr(array $config, string $key, array $default): array
-    {
-        $value = $config[$key] ?? null;
-        if (!\is_array($value)) {
-            return $default;
-        }
-
-        return array_values(array_filter($value, static fn (mixed $v): bool => \is_int($v)));
     }
 }

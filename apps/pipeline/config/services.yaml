@@ -14,7 +14,7 @@ services:
             # PreFilterFactory takes array params; wired in pre_filter.yaml.
             - '../src/PreFilter/'
 
-    # packages/shared is mostly value objects / DTOs / enums (Money, PreFilter,
+    # packages/shared is mostly value objects / DTOs / enums (PreFilter,
     # Keepa Candidate/DealPage/TokenMeter) which must NOT be autowired as
     # services. Only the storage contracts live under Shared\Storage; their
     # implementations are app-side, so nothing is registered from shared here.
@@ -49,7 +49,7 @@ services:
             $api: '@Amazon\CreatorsAPI\v1\com\amazon\creators\api\DefaultApi'
             $partnerTag: '%env(AMAZON_PARTNER_TAG)%'
             $marketplace: '%env(CREATORS_MARKETPLACE)%'
-            $cap: 10 # TEMP (live smoke): one getItems batch to dodge the 429 rate limit. Revert to null
+            $cap: 10 # one GetItems batch per cycle, under the ~1 TPS floor quota; raise as the quota grows
             # Steady-pace batches under the ~1 TPS floor quota; retry a throttled
             # batch with exponential backoff before the cycle fail-safe skips it.
             $throttleMicros: 1100000 # ~1.1s between GetItems calls (lower as quota grows)

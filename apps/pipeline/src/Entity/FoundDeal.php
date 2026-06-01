@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Entity;
 
 use DealPromoter\Shared\Channel\PublishableDeal;
+use DealPromoter\Shared\Creators\LiveSnapshot;
+use DealPromoter\Shared\Keepa\Candidate;
 use Doctrine\ORM\Mapping as ORM;
 
 /**
@@ -89,6 +91,29 @@ class FoundDeal implements PublishableDeal
         $this->asin = $asin;
         $this->title = $title;
         $this->createdAt = $createdAt;
+    }
+
+    /**
+     * Stitch a surviving Candidate and its Live Snapshot into a found-deal row.
+     * The single home for the Keepa-signal + snapshot-fact mapping the Cycle records.
+     */
+    public static function fromSnapshot(Candidate $candidate, LiveSnapshot $snapshot, \DateTimeImmutable $createdAt): self
+    {
+        $deal = new self($candidate->asin, $candidate->title, $createdAt);
+        $deal->imageUrl = $candidate->imageUrl;
+        $deal->keepaAvg90Cents = $candidate->avg90Cents;
+        $deal->keepaDropPct = $candidate->dropPercent90;
+        $deal->snapshotPriceCents = $snapshot->priceCents;
+        $deal->availability = $snapshot->availability;
+        $deal->condition = $snapshot->condition;
+        $deal->merchantId = $snapshot->merchantId;
+        $deal->amazonSavingsPct = $snapshot->savingsPercent;
+        $deal->savingBasisType = $snapshot->savingBasisType;
+        $deal->hasDealDetails = $snapshot->hasDealDetails;
+        $deal->violatesMap = $snapshot->violatesMap;
+        $deal->affiliateUrl = $snapshot->detailPageUrl;
+
+        return $deal;
     }
 
     public function getId(): ?int

@@ -102,21 +102,7 @@ final class RunCycleCommand extends Command
                 continue;
             }
 
-            $foundDeal = new FoundDeal($candidate->asin, $candidate->title, $startedAt);
-            $foundDeal->setImageUrl($candidate->imageUrl);
-            $foundDeal->setKeepaAvg90Cents($candidate->avg90Cents);
-            $foundDeal->setKeepaDropPct($candidate->dropPercent90);
-            $foundDeal->setSnapshotPriceCents($snapshot->priceCents);
-            $foundDeal->setAvailability($snapshot->availability);
-            $foundDeal->setCondition($snapshot->condition);
-            $foundDeal->setMerchantId($snapshot->merchantId);
-            $foundDeal->setAmazonSavingsPct($snapshot->savingsPercent);
-            $foundDeal->setSavingBasisType($snapshot->savingBasisType);
-            $foundDeal->setHasDealDetails($snapshot->hasDealDetails);
-            $foundDeal->setViolatesMap($snapshot->violatesMap);
-            $foundDeal->setAffiliateUrl($snapshot->detailPageUrl);
-
-            $cycleRun->addFoundDeal($foundDeal);
+            $cycleRun->addFoundDeal(FoundDeal::fromSnapshot($candidate, $snapshot, $startedAt));
             ++$snapshottedCount;
         }
 
