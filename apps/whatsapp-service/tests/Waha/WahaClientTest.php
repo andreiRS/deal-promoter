@@ -142,6 +142,94 @@ final class WahaClientTest extends TestCase
         self::assertSame(404, $qr->status);
     }
 
+    // -------------------------------------------------------------------------
+    // listOwnedChannels
+    // -------------------------------------------------------------------------
+
+    public function testListOwnedChannelsFiltersToNewsletterOwnerAndAdmin(): void
+    {
+        $payload = json_encode([
+            ['id' => 'abc@newsletter', 'name' => 'My Channel', 'role' => 'OWNER'],
+            ['id' => 'def@newsletter', 'name' => 'Admin Chan', 'role' => 'ADMIN'],
+            ['id' => 'ghi@newsletter', 'name' => 'Sub Chan',   'role' => 'SUBSCRIBER'],
+            ['id' => 'jkl@g.us',       'name' => 'A Group',    'role' => 'OWNER'],
+        ], \JSON_THROW_ON_ERROR);
+
+        $client = $this->wahaClient(
+            new MockResponse($payload, ['response_headers' => ['Content-Type' => 'application/json']]),
+        );
+
+        $channels = $client->listOwnedChannels();
+
+        self::assertCount(2, $channels);
+        self::assertSame('abc@newsletter', $channels[0]['id']);
+        self::assertSame('OWNER', $channels[0]['role']);
+        self::assertSame('def@newsletter', $channels[1]['id']);
+        self::assertSame('ADMIN', $channels[1]['role']);
+    }
+
+    public function testListOwnedChannelsHitsTheSingularSessionPath(): void
+    {
+        $response = new MockResponse(
+            json_encode([], \JSON_THROW_ON_ERROR),
+            ['response_headers' => ['Content-Type' => 'application/json']],
+        );
+        $http = new MockHttpClient($response);
+        $client = new WahaClient($http, 'http://waha:3000', 'secret-key', 'default');
+
+        $client->listOwnedChannels();
+
+        self::assertSame('http://waha:3000/api/default/channels', $response->getRequestUrl());
+        self::assertContains('X-Api-Key: secret-key', $response->getRequestOptions()['headers']);
+    }
+
+    public function testListOwnedChannelsThrowsOnNonOkResponse(): void
+    {
+        $client = $this->wahaClient(new MockResponse('forbidden', ['http_code' => 403]));
+
+        $this->expectException(WahaException::class);
+
+        $client->listOwnedChannels();
+    }
+
+    // -------------------------------------------------------------------------
+    // sendText
+    // -------------------------------------------------------------------------
+
+    public function testSendTextPostsToSendTextEndpointWithChatIdAndText(): void
+    {
+        $responsePayload = json_encode(['id' => 'msg-1'], \JSON_THROW_ON_ERROR);
+        $response = new MockResponse(
+            $responsePayload,
+            ['response_headers' => ['Content-Type' => 'application/json']],
+        );
+        $http = new MockHttpClient($response);
+        $client = new WahaClient($http, 'http://waha:3000', 'secret-key', 'default');
+
+        $result = $client->sendText('abc@newsletter', 'Hello!');
+
+        self::assertSame('POST', $response->getRequestMethod());
+        self::assertSame('http://waha:3000/api/sendText', $response->getRequestUrl());
+
+        $body = json_decode($response->getRequestOptions()['body'], true, 512, \JSON_THROW_ON_ERROR);
+        self::assertSame('default', $body['session']);
+        self::assertSame('abc@newsletter', $body['chatId']);
+        self::assertSame('Hello!', $body['text']);
+
+        self::assertTrue($result['ok']);
+        self::assertSame(200, $result['status']);
+    }
+
+    public function testSendTextReturnsNotOkOnUpstreamError(): void
+    {
+        $client = $this->wahaClient(new MockResponse('bad', ['http_code' => 500]));
+
+        $result = $client->sendText('abc@newsletter', 'Hi');
+
+        self::assertFalse($result['ok']);
+        self::assertSame(500, $result['status']);
+    }
+
     private function wahaClient(MockResponse $response): WahaClient
     {
         return new WahaClient(

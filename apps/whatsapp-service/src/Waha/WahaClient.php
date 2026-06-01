@@ -75,6 +75,59 @@ final class WahaClient
     }
 
     /**
+     * GET /api/{session}/channels (SINGULAR path, matching the QR endpoint). Filters
+     * the list to channels whose id ends with `@newsletter` AND whose role is OWNER
+     * or ADMIN (i.e. the account can post to it). Mirrors `listOwnedChannels` in
+     * the prototype's `waha.ts`. Throws on a non-ok upstream response.
+     *
+     * @return list<array{id: string, name: string, role: string}>
+     */
+    public function listOwnedChannels(): array
+    {
+        $response = $this->request('GET', "/api/{$this->session}/channels");
+        $status = $response->getStatusCode();
+
+        if ($status < 200 || $status >= 300) {
+            throw new WahaException("WAHA channels failed: {$status}");
+        }
+
+        /** @var list<array{id: string, name: string, role: string}> $raw */
+        $raw = $response->toArray(false);
+
+        return array_values(array_filter(
+            $raw,
+            static fn (array $channel): bool => str_ends_with($channel['id'], '@newsletter')
+                && \in_array($channel['role'], ['OWNER', 'ADMIN'], true),
+        ));
+    }
+
+    /**
+     * POST /api/sendText. Sends `text` to `chatId` using the configured session.
+     * Returns a result array mirroring the prototype's `{ ok, status, data }` shape
+     * so the caller can relay the outcome without knowing WAHA's response schema.
+     *
+     * @return array{ok: bool, status: int, data: mixed}
+     */
+    public function sendText(string $chatId, string $text): array
+    {
+        $response = $this->request('POST', '/api/sendText', [
+            'session' => $this->session,
+            'chatId' => $chatId,
+            'text' => $text,
+        ]);
+        $status = $response->getStatusCode();
+        $ok = $status >= 200 && $status < 300;
+
+        try {
+            $data = $response->toArray(false);
+        } catch (\Throwable) {
+            $data = null;
+        }
+
+        return ['ok' => $ok, 'status' => $status, 'data' => $data];
+    }
+
+    /**
      * GET /api/{session}/auth/qr?format=image. Note the SINGULAR `/api/{session}`
      * shape (WAHA is inconsistent vs. the plural lifecycle paths). Returns the
      * raw image bytes and content type for the controller to stream; on a non-ok
@@ -95,11 +148,19 @@ final class WahaClient
         return QrImage::available($response->getContent(false), $contentType);
     }
 
-    private function request(string $method, string $path): ResponseInterface
+    /**
+     * @param array<string, mixed>|null $json JSON-encodable body; when provided,
+     *                                        Content-Type: application/json is set automatically
+     */
+    private function request(string $method, string $path, ?array $json = null): ResponseInterface
     {
         // The X-Api-Key is attached here and only here (ADR 0002).
-        return $this->http->request($method, $this->baseUrl.$path, [
-            'headers' => ['X-Api-Key' => $this->apiKey],
-        ]);
+        $options = ['headers' => ['X-Api-Key' => $this->apiKey]];
+
+        if (null !== $json) {
+            $options['json'] = $json;
+        }
+
+        return $this->http->request($method, $this->baseUrl.$path, $options);
     }
 }

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WhatsApp Gateway — Pairing</title>
+    <title>WhatsApp Gateway</title>
     <link rel="preconnect" href="https://fonts.bunny.net">
     <link href="https://fonts.bunny.net/css?family=inter:400,600,700&display=swap" rel="stylesheet">
     <style>
@@ -85,12 +85,43 @@
             margin-top: 1rem;
             padding: 0.6rem 0.8rem;
             border-radius: 0.5rem;
-            border: 1px solid var(--danger);
-            color: var(--danger);
             font-size: 0.9rem;
         }
+        .alert-error { border: 1px solid var(--danger); color: var(--danger); }
+        .alert-success { border: 1px solid var(--success); color: var(--success); }
         .dot { width: 0.6rem; height: 0.6rem; border-radius: 50%; background: var(--success); }
         [hidden] { display: none !important; }
+        select, textarea {
+            width: 100%;
+            padding: 0.6rem 0.75rem;
+            border: 1px solid var(--border);
+            border-radius: 0.5rem;
+            background: var(--bg);
+            color: var(--text);
+            font: inherit;
+            font-size: 0.95rem;
+        }
+        select { cursor: pointer; }
+        textarea { resize: vertical; }
+        .send-row { display: flex; align-items: center; gap: 0.5rem; }
+        .send-row select { flex: 1; }
+        .btn-icon {
+            flex-shrink: 0;
+            width: 2.25rem;
+            height: 2.25rem;
+            padding: 0;
+            border: 1px solid var(--border);
+            border-radius: 0.5rem;
+            background: var(--surface);
+            color: var(--text);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .btn-icon:disabled { opacity: 0.6; cursor: progress; }
+        label { display: block; font-size: 0.9rem; font-weight: 600; margin-bottom: 0.3rem; color: var(--muted); }
+        .send-card { border-top: 1px solid var(--border); margin-top: 1.25rem; padding-top: 1.25rem; }
     </style>
 </head>
 <body>
@@ -124,10 +155,34 @@
                     <span>WhatsApp connected.</span>
                 </div>
                 <button id="logout" class="btn-danger">Logout</button>
+
+                <!-- Send form — visible only when WORKING -->
+                <div class="send-card stack">
+                    <h2 style="font-size:1rem;margin:0 0 0.75rem;">Send to a Channel</h2>
+
+                    <div>
+                        <label for="channel-select">Channel</label>
+                        <div class="send-row">
+                            <select id="channel-select">
+                                <option value="" disabled selected id="channel-placeholder">Syncing channels from WhatsApp…</option>
+                            </select>
+                            <button id="refresh-btn" class="btn-icon" title="Refresh channels" type="button">&#8635;</button>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label for="message-text">Message</label>
+                        <textarea id="message-text" rows="6" placeholder="Type your announcement…"></textarea>
+                    </div>
+
+                    <button id="send-btn" class="btn-primary" type="button" disabled>Send</button>
+
+                    <div id="send-result" class="alert" hidden></div>
+                </div>
             </div>
         </div>
 
-        <div id="error" class="alert" hidden></div>
+        <div id="error" class="alert alert-error" hidden></div>
     </main>
 
     <script>
@@ -209,6 +264,177 @@
 
             render();
             setInterval(poll, 2000);
+        })();
+
+        // ---- Send form -------------------------------------------------------
+        // Mirrors SendForm.tsx: polls /channels every 2 s up to a 20 s budget on
+        // mount, then falls back to a "No channels found — try Refresh" empty state.
+        // On Send success the textarea is cleared; on failure the input is kept and
+        // the error shown. The form posts to /ui/send (open, no secret — ADR 0002).
+        // -----------------------------------------------------------------------
+        (function () {
+            const POLL_INTERVAL_MS = 2000;
+            const POLL_BUDGET_MS   = 20000;
+
+            const selEl   = document.getElementById('channel-select');
+            const phEl    = document.getElementById('channel-placeholder');
+            const refBtn  = document.getElementById('refresh-btn');
+            const msgEl   = document.getElementById('message-text');
+            const sendBtn = document.getElementById('send-btn');
+            const resEl   = document.getElementById('send-result');
+
+            let pollTimer = null;
+            let syncing   = false;
+
+            function updateSendBtn() {
+                const hasChan = selEl.value !== '';
+                const hasText = msgEl.value.trim() !== '';
+                sendBtn.disabled = !(hasChan && hasText);
+            }
+
+            selEl.addEventListener('change', updateSendBtn);
+            msgEl.addEventListener('input', updateSendBtn);
+
+            function showResult(msg, isError) {
+                resEl.textContent = msg;
+                resEl.className = 'alert ' + (isError ? 'alert-error' : 'alert-success');
+                resEl.hidden = !msg;
+            }
+
+            function populateSelect(channels) {
+                // Remove all but the placeholder option.
+                while (selEl.options.length > 1) selEl.remove(1);
+
+                if (!channels || channels.length === 0) {
+                    phEl.textContent = 'No channels found — try Refresh';
+                    selEl.value = '';
+                    updateSendBtn();
+                    return;
+                }
+
+                phEl.textContent = 'Pick a channel';
+                channels.forEach(function (c) {
+                    const opt = document.createElement('option');
+                    opt.value = c.id;
+                    opt.textContent = c.name + ' (' + c.role + ')';
+                    selEl.appendChild(opt);
+                });
+                // Auto-select first if only one channel.
+                if (channels.length === 1) {
+                    selEl.value = channels[0].id;
+                }
+                updateSendBtn();
+            }
+
+            async function fetchChannels() {
+                try {
+                    const res  = await fetch('/channels');
+                    const data = await res.json();
+                    if (!res.ok || !Array.isArray(data)) {
+                        showResult(data.error ?? ('HTTP ' + res.status), true);
+                        return null;
+                    }
+                    return data;
+                } catch (e) {
+                    showResult(e.message, true);
+                    return null;
+                }
+            }
+
+            function stopPolling() {
+                if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+                syncing = false;
+                refBtn.disabled = false;
+            }
+
+            async function loadChannels() {
+                stopPolling();
+                refBtn.disabled = true;
+                phEl.textContent = 'Loading channels…';
+                selEl.value = '';
+                updateSendBtn();
+                const data = await fetchChannels();
+                populateSelect(data);
+                refBtn.disabled = false;
+            }
+
+            function startSyncPoll() {
+                const startedAt = Date.now();
+                syncing = true;
+                refBtn.disabled = true;
+                phEl.textContent = 'Syncing channels from WhatsApp…';
+
+                async function tick() {
+                    const data = await fetchChannels();
+                    if (data && data.length > 0) {
+                        populateSelect(data);
+                        stopPolling();
+                        return;
+                    }
+                    if (Date.now() - startedAt >= POLL_BUDGET_MS) {
+                        populateSelect(data);
+                        stopPolling();
+                        return;
+                    }
+                    pollTimer = setTimeout(tick, POLL_INTERVAL_MS);
+                }
+
+                tick();
+            }
+
+            refBtn.addEventListener('click', loadChannels);
+
+            sendBtn.addEventListener('click', async function () {
+                const chatId = selEl.value;
+                const text   = msgEl.value.trim();
+                if (!chatId || !text) return;
+
+                sendBtn.disabled = true;
+                showResult('', false);
+
+                try {
+                    const res  = await fetch('/ui/send', {
+                        method:  'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body:    JSON.stringify({ chatId, text }),
+                    });
+                    const data = await res.json();
+                    if (!res.ok) {
+                        showResult(data.error ?? ('HTTP ' + res.status), true);
+                    } else {
+                        showResult('Message sent.', false);
+                        msgEl.value = '';
+                    }
+                } catch (e) {
+                    showResult(e.message, true);
+                } finally {
+                    updateSendBtn();
+                }
+            });
+
+            // Kick off the channel sync whenever the WORKING section becomes visible.
+            // We piggyback on the pairing-page poll that already runs every 2 s; to
+            // avoid coupling the two IIFE scopes we observe the element visibility.
+            const observer = new MutationObserver(function (mutations) {
+                mutations.forEach(function (m) {
+                    if (m.attributeName === 'hidden') {
+                        const nowVisible = !m.target.hidden;
+                        if (nowVisible && !syncing) {
+                            startSyncPoll();
+                        } else if (!nowVisible) {
+                            stopPolling();
+                        }
+                    }
+                });
+            });
+
+            const workingEl = document.getElementById('working');
+            observer.observe(workingEl, { attributes: true, attributeFilter: ['hidden'] });
+
+            // If already WORKING on initial load, kick off immediately.
+            if (!workingEl.hidden) {
+                startSyncPoll();
+            }
         })();
     </script>
 </body>
