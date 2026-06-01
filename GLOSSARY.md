@@ -20,6 +20,8 @@ Amazon's own evidence that a discount is real, read off the [Live Snapshot](#liv
 
 Distinct from a `LIST_PRICE` basis, which is the seller-set MSRP and gameable, so it is **not** attestation. Attestation and our own [Recorded Price History](#recorded-price-history) are the only trustworthy sources of [Discount Magnitude](#discount-magnitude); attestation is rare (~1 in 10 snapshotted items).
 
+A **per-deal marker, not a gate.** Every price-valid survivor in a [Cycle](#cycle) is recorded regardless of attestation; attested ones are simply flagged (a green "✓ Amazon-attested" badge on the review page). Attestation once decided which survivors were recorded at all — that record-gate was removed, leaving it a trust/quality signal only.
+
 ## Buy Box
 
 The single winning listing for a product, identified by `isBuyBoxWinner === true` in the [Live Snapshot](#live-snapshot). All price, condition, and merchant facts read from the buy box.
