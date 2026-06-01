@@ -65,118 +65,180 @@
         .flash-success { border-color: var(--success); color: var(--success); }
         .flash-error   { border-color: var(--danger);  color: var(--danger); }
 
-        /* Deal cards */
-        .deals {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-            gap: 1rem;
-            align-items: start;
+        .sr-only {
+            position: absolute;
+            width: 1px; height: 1px;
+            padding: 0; margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
         }
-        .deal-card {
-            display: flex;
-            flex-direction: column;
-            gap: 0.85rem;
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 1rem;
+
+        /* Deal table (compact) */
+        .deals { width: 100%; border-collapse: collapse; }
+        .deals th {
+            text-align: left;
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: var(--muted);
+            font-weight: 600;
+            padding: 0.5rem 0.75rem;
+            border-bottom: 1px solid var(--border);
         }
-        .deal-card--attested { border-left: 3px solid var(--success); }
-        .deal-head { display: flex; gap: 0.85rem; align-items: flex-start; }
-        .deal-thumb {
-            width: 88px;
-            height: 88px;
+        .deals td {
+            padding: 0.6rem 0.75rem;
+            border-bottom: 1px solid var(--border);
+            vertical-align: middle;
+        }
+        .mono { font-family: 'JetBrains Mono', monospace; }
+
+        /* Amazon attestation: Amazon's own evidence the discount is real. */
+        .deal--att td.product { border-left: 3px solid var(--success); }
+
+        .product-cell { display: flex; gap: 0.6rem; align-items: flex-start; }
+        .thumb {
+            width: 56px;
+            height: 56px;
             flex-shrink: 0;
             object-fit: contain;
             background: var(--bg);
             border: 1px solid var(--border);
             border-radius: 8px;
         }
-        .deal-thumb--empty {
+        .thumb--empty {
             display: flex;
             align-items: center;
             justify-content: center;
             color: var(--muted);
         }
-        .deal-headings { min-width: 0; }
-        .deal-title {
-            font-size: 1rem;
-            font-weight: 600;
-            line-height: 1.35;
-            margin: 0 0 0.35rem;
-        }
-        .deal-price { font-size: 1.3rem; font-weight: 700; }
+        .product-text { min-width: 0; }
+        .title-line { font-weight: 600; line-height: 1.3; }
+        .att-mark { margin-top: 0.2rem; }
 
-        /* Headline discount signals */
-        .badges { display: flex; flex-wrap: wrap; gap: 0.4rem; }
-        .badge {
-            font-size: 0.8rem;
+        .price { font-weight: 700; white-space: nowrap; }
+
+        /* Discount chips */
+        .disc-chips { display: flex; flex-direction: column; gap: 0.25rem; align-items: flex-start; }
+        .chip {
+            display: inline-block;
+            font-size: 0.72rem;
             font-weight: 600;
-            padding: 0.15rem 0.5rem;
+            padding: 0.1rem 0.45rem;
             border-radius: 999px;
             border: 1px solid var(--highlight);
             color: var(--highlight);
             white-space: nowrap;
         }
-        /* Amazon attestation: Amazon's own evidence the discount is real. */
-        .badge--attested {
+        .chip--att {
             border-color: var(--success);
             color: var(--success);
             background: color-mix(in srgb, var(--success) 12%, transparent);
         }
 
         /* Actions */
-        .deal-actions {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.6rem;
-            align-items: center;
-            margin-top: auto;
-        }
+        td.action { text-align: right; white-space: nowrap; }
+        td.action form { display: inline; }
+        td.action .open { margin-left: 0.6rem; }
         .btn {
             font: inherit;
             font-weight: 600;
             border: 1px solid transparent;
             border-radius: 8px;
-            padding: 0.5rem 1rem;
+            padding: 0.4rem 0.9rem;
             cursor: pointer;
         }
         .btn-publish { background: var(--info); color: #fff; }
         .btn-publish:hover { filter: brightness(1.08); }
+        .btn:disabled { opacity: 0.6; cursor: default; filter: none; }
         .btn:focus-visible,
         a:focus-visible,
         summary:focus-visible {
             outline: 2px solid var(--info);
             outline-offset: 2px;
         }
-        .link-open { font-weight: 600; }
-        .requested { color: var(--success); font-weight: 600; font-size: 0.9rem; }
+        .open { font-weight: 600; white-space: nowrap; }
+        .req { color: var(--success); font-weight: 600; font-size: 0.85rem; white-space: nowrap; }
+        .no-link { color: var(--muted); font-size: 0.82rem; }
 
-        /* Secondary signals disclosure */
-        .more { border-top: 1px solid var(--border); padding-top: 0.6rem; }
+        /* Expandable secondary signals row */
+        tr.detail td { padding: 0 0.75rem; border-bottom: 1px solid var(--border); }
+        .more { margin: 0; }
         .more > summary {
             cursor: pointer;
             color: var(--muted);
-            font-size: 0.85rem;
+            font-size: 0.8rem;
+            padding: 0.4rem 0;
+            list-style-position: inside;
         }
         .signals {
             display: grid;
-            grid-template-columns: auto 1fr;
-            gap: 0.25rem 0.75rem;
-            margin: 0.6rem 0 0;
-            font-size: 0.85rem;
+            grid-template-columns: repeat(2, auto 1fr);
+            gap: 0.2rem 1rem;
+            margin: 0 0 0.7rem;
+            font-size: 0.82rem;
+            max-width: 760px;
         }
         .signals dt { color: var(--muted); }
         .signals dd { margin: 0; font-family: 'JetBrains Mono', monospace; }
         .signals dd.bad { color: var(--danger); font-weight: 600; }
 
+        /* Phone: stack each deal into a labeled block, Publish full-width */
         @media (max-width: 640px) {
             body { padding: 1rem; }
-            .deals { grid-template-columns: 1fr; }
+            .deals thead { display: none; }
+            .deals, .deals tbody, .deals tr, .deals td { display: block; width: 100%; }
+
+            tr.deal {
+                background: var(--surface);
+                border: 1px solid var(--border);
+                border-bottom: 0;
+                border-radius: 12px 12px 0 0;
+                padding: 0.85rem 0.85rem 0.3rem;
+                margin: 0.75rem 0 0;
+            }
+            tr.deal.deal--att { border-left: 3px solid var(--success); }
+            tr.deal td { border: 0; padding: 0.3rem 0; }
+            tr.deal td.product { border-left: 0; }
+
+            td[data-label]::before {
+                content: attr(data-label);
+                display: block;
+                color: var(--muted);
+                font-size: 0.7rem;
+                text-transform: uppercase;
+                letter-spacing: 0.04em;
+            }
+            td.action { text-align: left; }
+            td.action form { display: block; }
+            td.action .btn { width: 100%; }
+            td.action .open { margin-left: 0; display: inline-block; margin-top: 0.5rem; }
+
+            tr.detail {
+                background: var(--surface);
+                border: 1px solid var(--border);
+                border-top: 0;
+                border-radius: 0 0 12px 12px;
+                margin: 0 0 0.75rem;
+            }
+            tr.detail.deal--att { border-left: 3px solid var(--success); }
+            tr.detail td { padding: 0 0.85rem 0.4rem; border: 0; }
+            .signals { grid-template-columns: auto 1fr; }
         }
     </style>
 </head>
 <body>
 {% block body %}{% endblock %}
+<script>
+    /* Guard against double-publish: disable the button on first submit. */
+    document.addEventListener('submit', function (e) {
+        var btn = e.target.querySelector('button[type="submit"]');
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = 'Publishing…';
+        }
+    });
+</script>
 </body>
 </html>

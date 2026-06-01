@@ -24,98 +24,121 @@
         {% if cycle.foundDeals is empty %}
             <p class="empty">No found deals in this cycle.</p>
         {% else %}
-            <div class="deals">
-                {% for deal in cycle.foundDeals %}
-                    <article class="deal-card{% if deal.hasAmazonAttestation %} deal-card--attested{% endif %}">
-                        <div class="deal-head">
-                            {% if deal.imageUrl %}
-                                <img class="deal-thumb" src="{{ deal.imageUrl }}" alt="{{ deal.title }}">
-                            {% else %}
-                                <div class="deal-thumb deal-thumb--empty" aria-hidden="true">&mdash;</div>
-                            {% endif %}
-                            <div class="deal-headings">
-                                <h2 class="deal-title">{{ deal.title }}</h2>
-                                <div class="deal-price">
-                                    {% if deal.snapshotPriceCents is not null %}
-                                        &euro;{{ (deal.snapshotPriceCents / 100)|number_format(2, '.', '') }}
+            <table class="deals">
+                <thead>
+                    <tr>
+                        <th>Product</th>
+                        <th>Price</th>
+                        <th>Discount</th>
+                        <th><span class="sr-only">Actions</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for deal in cycle.foundDeals %}
+                        <tr class="deal{% if deal.hasAmazonAttestation %} deal--att{% endif %}">
+                            <td class="product">
+                                <div class="product-cell">
+                                    {% if deal.imageUrl %}
+                                        <img class="thumb" src="{{ deal.imageUrl }}" alt="{{ deal.title }}">
                                     {% else %}
-                                        &mdash;
+                                        <div class="thumb thumb--empty" aria-hidden="true">&mdash;</div>
                                     {% endif %}
+                                    <div class="product-text">
+                                        <div class="title-line">{{ deal.title }}</div>
+                                        {% if deal.hasAmazonAttestation %}
+                                            <div class="att-mark">
+                                                <span class="chip chip--att" title="Amazon's own evidence the discount is real (deal badge or WAS_PRICE)">&check; Amazon-attested</span>
+                                            </div>
+                                        {% endif %}
+                                    </div>
                                 </div>
-                            </div>
-                        </div>
+                            </td>
 
-                        {% if deal.hasAmazonAttestation or deal.keepaDropPct is not null or deal.amazonSavingsPct is not null %}
-                            <div class="badges">
-                                {% if deal.hasAmazonAttestation %}
-                                    <span class="badge badge--attested" title="Amazon's own evidence the discount is real (deal badge or WAS_PRICE)">&check; Amazon-attested</span>
+                            <td class="price mono" data-label="Price">
+                                {% if deal.snapshotPriceCents is not null %}
+                                    &euro;{{ (deal.snapshotPriceCents / 100)|number_format(2, '.', '') }}
+                                {% else %}
+                                    &mdash;
                                 {% endif %}
-                                {% if deal.keepaDropPct is not null %}
-                                    <span class="badge">Keepa &minus;{{ deal.keepaDropPct }}%</span>
+                            </td>
+
+                            <td class="discount" data-label="Discount">
+                                {% if deal.keepaDropPct is not null or deal.amazonSavingsPct is not null %}
+                                    <div class="disc-chips">
+                                        {% if deal.keepaDropPct is not null %}
+                                            <span class="chip">Keepa &minus;{{ deal.keepaDropPct }}%</span>
+                                        {% endif %}
+                                        {% if deal.amazonSavingsPct is not null %}
+                                            <span class="chip">Amazon &minus;{{ deal.amazonSavingsPct }}%</span>
+                                        {% endif %}
+                                    </div>
+                                {% else %}
+                                    &mdash;
                                 {% endif %}
-                                {% if deal.amazonSavingsPct is not null %}
-                                    <span class="badge">Amazon &minus;{{ deal.amazonSavingsPct }}%</span>
+                            </td>
+
+                            <td class="action" data-label="Actions">
+                                {% if deal.publishRequestedAt is not null %}
+                                    <span class="req">&check; requested {{ deal.publishRequestedAt|date('Y-m-d H:i') }}</span>
+                                {% elseif deal.affiliateUrl is null %}
+                                    {# No affiliate link → no product to publish (the single product gate). #}
+                                    <span class="no-link">no link</span>
+                                {% else %}
+                                    {# TODO: CSRF when auth lands #}
+                                    <form method="post" action="{{ path('publish_deal', {id: deal.id}) }}">
+                                        <button type="submit" class="btn btn-publish">Publish</button>
+                                    </form>
                                 {% endif %}
-                            </div>
-                        {% endif %}
+                                {% if deal.affiliateUrl %}
+                                    <a class="open" href="{{ deal.affiliateUrl }}" rel="nofollow noopener" target="_blank">Open &rarr;</a>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr class="detail">
+                            <td colspan="4">
+                                <details class="more">
+                                    <summary>More signals</summary>
+                                    <dl class="signals">
+                                        <dt>Keepa avg90</dt>
+                                        <dd>
+                                            {% if deal.keepaAvg90Cents is not null %}
+                                                &euro;{{ (deal.keepaAvg90Cents / 100)|number_format(2, '.', '') }}
+                                            {% else %}&mdash;{% endif %}
+                                        </dd>
 
-                        <div class="deal-actions">
-                            {% if deal.publishRequestedAt is not null %}
-                                <span class="requested">&check; Publish requested ({{ deal.publishRequestedAt|date('Y-m-d H:i') }})</span>
-                            {% elseif deal.affiliateUrl is null %}
-                                {# No affiliate link → no product to publish (the single product gate). #}
-                            {% else %}
-                                {# TODO: CSRF when auth lands #}
-                                <form method="post" action="{{ path('publish_deal', {id: deal.id}) }}">
-                                    <button type="submit" class="btn btn-publish">Publish</button>
-                                </form>
-                            {% endif %}
-                            {% if deal.affiliateUrl %}
-                                <a class="link-open" href="{{ deal.affiliateUrl }}" rel="nofollow noopener" target="_blank">Open &rarr;</a>
-                            {% endif %}
-                        </div>
+                                        <dt>Saving basis</dt>
+                                        <dd>{{ deal.savingBasisType ?? '—' }}</dd>
 
-                        <details class="more">
-                            <summary>More signals</summary>
-                            <dl class="signals">
-                                <dt>Keepa avg90</dt>
-                                <dd>
-                                    {% if deal.keepaAvg90Cents is not null %}
-                                        &euro;{{ (deal.keepaAvg90Cents / 100)|number_format(2, '.', '') }}
-                                    {% else %}&mdash;{% endif %}
-                                </dd>
+                                        <dt>Deal details</dt>
+                                        <dd>
+                                            {% if deal.hasDealDetails is null %}&mdash;
+                                            {% else %}{{ deal.hasDealDetails ? 'yes' : 'no' }}{% endif %}
+                                        </dd>
 
-                                <dt>Saving basis</dt>
-                                <dd>{{ deal.savingBasisType ?? '—' }}</dd>
+                                        <dt>MAP violation</dt>
+                                        <dd{% if deal.violatesMap %} class="bad"{% endif %}>
+                                            {% if deal.violatesMap is null %}&mdash;
+                                            {% else %}{{ deal.violatesMap ? 'yes' : 'no' }}{% endif %}
+                                        </dd>
 
-                                <dt>Deal details</dt>
-                                <dd>
-                                    {% if deal.hasDealDetails is null %}&mdash;
-                                    {% else %}{{ deal.hasDealDetails ? 'yes' : 'no' }}{% endif %}
-                                </dd>
+                                        <dt>Availability</dt>
+                                        <dd>{{ deal.availability ?? '—' }}</dd>
 
-                                <dt>MAP violation</dt>
-                                <dd{% if deal.violatesMap %} class="bad"{% endif %}>
-                                    {% if deal.violatesMap is null %}&mdash;
-                                    {% else %}{{ deal.violatesMap ? 'yes' : 'no' }}{% endif %}
-                                </dd>
+                                        <dt>Condition</dt>
+                                        <dd>{{ deal.condition ?? '—' }}</dd>
 
-                                <dt>Availability</dt>
-                                <dd>{{ deal.availability ?? '—' }}</dd>
+                                        <dt>Merchant</dt>
+                                        <dd>{{ deal.merchantId ?? '—' }}</dd>
 
-                                <dt>Condition</dt>
-                                <dd>{{ deal.condition ?? '—' }}</dd>
-
-                                <dt>Merchant</dt>
-                                <dd>{{ deal.merchantId ?? '—' }}</dd>
-
-                                <dt>ASIN</dt>
-                                <dd>{{ deal.asin }}</dd>
-                            </dl>
-                        </details>
-                    </article>
-                {% endfor %}
-            </div>
+                                        <dt>ASIN</dt>
+                                        <dd>{{ deal.asin }}</dd>
+                                    </dl>
+                                </details>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         {% endif %}
     {% endif %}
 {% endblock %}
