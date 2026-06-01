@@ -29,6 +29,7 @@
         "symfony/doctrine-bridge": "^8",
         "symfony/dotenv": "^8.0",
         "symfony/framework-bundle": "^8.0",
+        "symfony/lock": "^8.1",
         "symfony/runtime": "^8.0",
         "symfony/yaml": "^8.0"
     },

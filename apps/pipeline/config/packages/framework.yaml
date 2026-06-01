@@ -4,6 +4,8 @@ framework:
     handle_all_throwables: true
     php_errors:
         log: true
+    # Registers the HttpClientInterface autowiring alias used by the Keepa client.
+    http_client: ~
 
 when@test:
     framework:

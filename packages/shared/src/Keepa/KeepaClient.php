@@ -11,7 +11,7 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
  * experiments/lib/keepa.ts. Discovery only: fetches one `/deal` page of up to
  * 150 raw Candidates for a flat 5 tokens and decodes them via DealParser.
  */
-final class KeepaClient
+final class KeepaClient implements KeepaDiscovery
 {
     private const string BASE_URL = 'https://api.keepa.com';
 

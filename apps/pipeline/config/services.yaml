@@ -11,6 +11,8 @@ services:
             - '../src/Kernel.php'
             # Doctrine entities are not services.
             - '../src/Entity/'
+            # PreFilterFactory takes array params; wired in pre_filter.yaml.
+            - '../src/PreFilter/'
 
     # packages/shared is mostly value objects / DTOs / enums (Money, PreFilter,
     # Keepa Candidate/DealPage/TokenMeter) which must NOT be autowired as
@@ -52,6 +54,17 @@ services:
     # The pipeline depends on the interface, not the SDK.
     DealPromoter\Shared\Creators\CreatorsClient: '@App\Creators\SdkCreatorsClient'
 
+    # --- Keepa discovery (P3) ---
+    # KeepaClient lives in packages/shared (not autowired); build it from env.
+    DealPromoter\Shared\Keepa\KeepaClient:
+        arguments:
+            $http: '@Symfony\Contracts\HttpClient\HttpClientInterface'
+            $apiKey: '%env(KEEPA_API_KEY)%'
+            $domain: '%env(int:KEEPA_DOMAIN)%'
+
+    # The Cycle depends on the discovery seam, not the concrete client.
+    DealPromoter\Shared\Keepa\KeepaDiscovery: '@DealPromoter\Shared\Keepa\KeepaClient'
+
 when@test:
     services:
         # Expose the storage seam to the test container so the integration test
@@ -62,6 +75,11 @@ when@test:
             public: true
 
         # Expose the Already-Posted Guard so integration tests can verify it
-        # wires end-to-end through the real Doctrine storage.
+        # wires end-to-end through the real Doctrine storage. Re-state its
+        # autowired arguments here: a bare `public: true` would reset the
+        # definition and drop them.
         DealPromoter\Shared\AlreadyPosted\AlreadyPostedGuard:
+            arguments:
+                $history: '@DealPromoter\Shared\Storage\RecordedPriceHistory'
+                $policy: '@DealPromoter\Shared\AlreadyPosted\RepostPolicy'
             public: true

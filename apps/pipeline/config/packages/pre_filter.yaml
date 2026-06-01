@@ -1,0 +1,37 @@
+# Config-driven Pre-filter thresholds (P4 "thresholds in config, no code change").
+# Editing these values changes the surviving-candidate set with no PHP change;
+# absent keys fall back to the Criteria / GuardThresholds defaults.
+parameters:
+    # Criteria — "what deals we want" (inclusion gates).
+    pre_filter.criteria:
+        minDiscountPercent: 20
+        minPriceCents: 0
+        maxPriceCents: null
+        maxSalesRank: null
+        allowedRootCategories: []
+        minRatingStarsTimesTen: null
+
+    # Outlier Guards — "what is fake" (exclusion proofs).
+    pre_filter.guards:
+        spikeRatio: 3.0
+        minSalesRankDrops90: 1
+        absPriceFloorCents: 200
+        maxClaimedDropPercent: 97
+
+services:
+    App\PreFilter\PreFilterFactory:
+        arguments:
+            $criteria: '%pre_filter.criteria%'
+            $guards: '%pre_filter.guards%'
+
+    # The Cycle depends on PreFilter; build it from config via the factory.
+    DealPromoter\Shared\PreFilter\PreFilter:
+        factory: ['@App\PreFilter\PreFilterFactory', 'create']
+
+when@test:
+    services:
+        # Public so the Cycle integration test resolves the real config-built
+        # Pre-filter and constructs the command with it.
+        DealPromoter\Shared\PreFilter\PreFilter:
+            factory: ['@App\PreFilter\PreFilterFactory', 'create']
+            public: true
