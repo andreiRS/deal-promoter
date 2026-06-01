@@ -13,6 +13,11 @@ services:
     environment:
       # Reach postgres over the compose network rather than localhost.
       DATABASE_URL: postgresql://${POSTGRES_USER:-deal_promoter}:${POSTGRES_PASSWORD:-deal_promoter}@postgres:5432/${POSTGRES_DB:-deal_promoter}?serverVersion=16&charset=utf8
+      # Reach the WhatsApp gateway over the compose network. The internal key must
+      # match the whatsapp-service side (same ${WHATSAPP_INTERNAL_KEY}).
+      WHATSAPP_SERVICE_URL: http://whatsapp-service:8000
+      WHATSAPP_CHANNEL_ID: ${WHATSAPP_CHANNEL_ID}
+      WHATSAPP_INTERNAL_KEY: ${WHATSAPP_INTERNAL_KEY}
     volumes:
       - .:/app
     working_dir: /app/apps/pipeline

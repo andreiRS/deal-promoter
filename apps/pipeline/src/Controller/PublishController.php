@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Channel\Exception\PublishFailed;
 use App\Entity\FoundDeal;
 use DealPromoter\Shared\Channel\ChannelPublisher;
 use Doctrine\ORM\EntityManagerInterface;
@@ -35,7 +36,15 @@ final class PublishController extends AbstractController
             throw $this->createNotFoundException(\sprintf('FoundDeal #%d not found.', $id));
         }
 
-        $this->publisher->publish($deal);
+        try {
+            $this->publisher->publish($deal);
+        } catch (PublishFailed $e) {
+            // Persist nothing: the button stays clickable, publishRequestedAt stays null.
+            $this->addFlash('error', $e->getMessage());
+
+            return $this->redirectToRoute('review');
+        }
+
         $deal->markPublishRequested(new \DateTimeImmutable());
         $em->flush();
 

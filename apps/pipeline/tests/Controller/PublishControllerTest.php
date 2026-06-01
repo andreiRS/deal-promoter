@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 namespace App\Tests\Controller;
 
+use App\Channel\Exception\PublishFailed;
 use App\Entity\CycleRun;
 use App\Entity\FoundDeal;
+use App\Entity\PostedDeal;
+use DealPromoter\Shared\Channel\ChannelPublisher;
+use DealPromoter\Shared\Channel\PublishableDeal;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -91,5 +95,74 @@ final class PublishControllerTest extends WebTestCase
     {
         $this->client->request('POST', '/publish/999999');
         self::assertResponseStatusCodeSame(404);
+    }
+
+    public function testPublishFailureKeepsDealUnpublishedAndWritesNoPostedDeal(): void
+    {
+        // Swap the ChannelPublisher seam for one that always fails. The container's
+        // when@test alias exposes the seam as public, so set() rebinds it.
+        $failing = new class implements ChannelPublisher {
+            public function publish(PublishableDeal $deal): void
+            {
+                throw new PublishFailed('boom: channel rejected the deal');
+            }
+        };
+        self::getContainer()->set(ChannelPublisher::class, $failing);
+
+        $cycle = new CycleRun(new \DateTimeImmutable('2026-06-01T12:00:00+00:00'));
+        $deal = new FoundDeal('B000FAIL01', 'Failing Deal', new \DateTimeImmutable('2026-06-01T12:00:00+00:00'));
+        $deal->setSnapshotPriceCents(1299);
+        $deal->setAffiliateUrl('https://www.amazon.de/dp/B000FAIL01?tag=t-21');
+        $cycle->addFoundDeal($deal);
+
+        $this->em->persist($cycle);
+        $this->em->flush();
+
+        $id = $deal->getId();
+        self::assertNotNull($id, 'FoundDeal must have an id after flush');
+
+        $this->client->request('POST', '/publish/'.$id);
+        self::assertResponseRedirects('/');
+
+        $this->client->followRedirect();
+        self::assertResponseIsSuccessful();
+
+        $body = (string) $this->client->getResponse()->getContent();
+        self::assertStringContainsString('boom: channel rejected the deal', $body);
+
+        // publishRequestedAt must remain null: a failed publish marks nothing.
+        $reloaded = $this->em->find(FoundDeal::class, $id);
+        self::assertNotNull($reloaded);
+        $this->em->refresh($reloaded);
+        self::assertNull(
+            $reloaded->getPublishRequestedAt(),
+            'publishRequestedAt must stay null when publish fails',
+        );
+
+        // No posted_deal row was written for this ASIN.
+        $posted = $this->em->getRepository(PostedDeal::class)->findOneBy(['asin' => 'B000FAIL01']);
+        self::assertNull($posted, 'A failed publish must persist no PostedDeal');
+    }
+
+    public function testReviewPageHidesPublishFormWhenNoAffiliateUrl(): void
+    {
+        $cycle = new CycleRun(new \DateTimeImmutable('2026-06-01T13:00:00+00:00'));
+        $deal = new FoundDeal('B000NOAFF1', 'NO-AFFILIATE-DEAL', new \DateTimeImmutable('2026-06-01T13:00:00+00:00'));
+        $deal->setSnapshotPriceCents(1299);
+        // affiliateUrl intentionally left null.
+        $cycle->addFoundDeal($deal);
+
+        $this->em->persist($cycle);
+        $this->em->flush();
+
+        $id = $deal->getId();
+        self::assertNotNull($id);
+
+        $crawler = $this->client->request('GET', '/');
+        self::assertResponseIsSuccessful();
+
+        // The publish form action for this deal must NOT be rendered.
+        $form = $crawler->filter('form[action="/publish/'.$id.'"]');
+        self::assertSame(0, $form->count(), 'No publish form should render for a deal without an affiliate link');
     }
 }

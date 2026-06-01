@@ -1,4 +1,10 @@
 parameters:
+    # WhatsApp gateway (slice 4) the pipeline calls over HTTP. The channel id and
+    # internal key default empty (fail-closed: the gateway 401s on an empty key);
+    # the service url defaults to the compose service name.
+    env(WHATSAPP_SERVICE_URL): 'http://whatsapp-service:8000'
+    env(WHATSAPP_CHANNEL_ID): ''
+    env(WHATSAPP_INTERNAL_KEY): ''
 
 services:
     _defaults:
@@ -88,10 +94,18 @@ services:
             $maxPages: 3 # hard ceiling on /deal pages fetched per cycle (cost bound)
             $targetAttestedDeals: 5 # stop paging once this many attested deals are recorded
 
-    # --- Publish channel seam (P9) ---
-    # NullChannelPublisher logs intent and makes no real HTTP call.
-    # Swap the alias here to wire a real publisher with no controller/template change.
-    DealPromoter\Shared\Channel\ChannelPublisher: '@App\Channel\NullChannelPublisher'
+    # --- Publish channel seam (P9 / slice 5) ---
+    # WahaChannelPublisher delivers to the WhatsApp channel via the slice-4 gateway.
+    # HttpClient + EntityManager autowire; the three strings come from env.
+    App\Channel\WahaChannelPublisher:
+        arguments:
+            $serviceUrl: '%env(WHATSAPP_SERVICE_URL)%'
+            $channelId: '%env(WHATSAPP_CHANNEL_ID)%'
+            $internalKey: '%env(WHATSAPP_INTERNAL_KEY)%'
+
+    # Prod wiring: the seam resolves to the real publisher. Swap this alias to
+    # rebind a different publisher with no controller/template change.
+    DealPromoter\Shared\Channel\ChannelPublisher: '@App\Channel\WahaChannelPublisher'
 
 when@test:
     services:
