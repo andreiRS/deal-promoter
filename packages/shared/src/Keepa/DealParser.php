@@ -30,7 +30,7 @@ final class DealParser
     private const string IMAGE_CDN_BASE = 'https://images-na.ssl-images-amazon.com/images/I/';
 
     /**
-     * @param array<string, mixed> $deal one entry of the Keepa `deals.dr[]` array
+     * @param array<array-key, mixed> $deal one entry of the Keepa `deals.dr[]` array
      */
     public function parse(array $deal): Candidate
     {
@@ -64,7 +64,7 @@ final class DealParser
      * Read a 1D `current`/`current`-shaped field at a price type. A non-positive
      * value is the `-1` sentinel and becomes null.
      *
-     * @param array<string, mixed> $deal
+     * @param array<array-key, mixed> $deal
      */
     private function current(array $deal, int $priceType, string $field = 'current'): ?int
     {
@@ -80,7 +80,7 @@ final class DealParser
      * Read a 2D `[dateRange][priceType]` field (`avg`, `deltaPercent`). A
      * non-positive value is a `-2`/`0` sentinel and becomes null.
      *
-     * @param array<string, mixed> $deal
+     * @param array<array-key, mixed> $deal
      */
     private function avg(array $deal, int $range, int $priceType, string $field = 'avg'): ?int
     {
@@ -100,7 +100,7 @@ final class DealParser
      * Read a scalar deal field (e.g. `salesRankDrops90`). The `-1` sentinel means
      * "no data" and becomes null; a real 0 (no rank drops) is kept.
      *
-     * @param array<string, mixed> $deal
+     * @param array<array-key, mixed> $deal
      */
     private function scalar(array $deal, string $field): ?int
     {

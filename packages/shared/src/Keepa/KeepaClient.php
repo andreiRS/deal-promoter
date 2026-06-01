@@ -62,7 +62,6 @@ final class KeepaClient
         $candidates = [];
         foreach ($rows as $row) {
             if (\is_array($row)) {
-                /* @var array<string, mixed> $row */
                 $candidates[] = $this->parser->parse($row);
             }
         }
