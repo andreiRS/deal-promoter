@@ -6,6 +6,7 @@ namespace App\Tests\Command;
 
 use App\Command\RunCycleCommand;
 use App\Entity\CycleRun;
+use App\Entity\FoundDeal;
 use DealPromoter\Shared\AlreadyPosted\AlreadyPostedGuard;
 use DealPromoter\Shared\Creators\CreatorsClient;
 use DealPromoter\Shared\Creators\LiveSnapshot;
@@ -14,6 +15,8 @@ use DealPromoter\Shared\Keepa\DealPage;
 use DealPromoter\Shared\Keepa\KeepaClient;
 use DealPromoter\Shared\Keepa\KeepaDiscovery;
 use DealPromoter\Shared\Keepa\TokenMeter;
+use DealPromoter\Shared\PreFilter\Criteria;
+use DealPromoter\Shared\PreFilter\GuardThresholds;
 use DealPromoter\Shared\PreFilter\PreFilter;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
@@ -73,11 +76,16 @@ final class RunCycleCommandTest extends KernelTestCase
         return $client->fetchDealPage()->candidates;
     }
 
-    private function command(KeepaDiscovery $discovery, CreatorsClient $creators): CommandTester
-    {
+    private function command(
+        KeepaDiscovery $discovery,
+        CreatorsClient $creators,
+        ?PreFilter $preFilter = null,
+    ): CommandTester {
         $container = self::getContainer();
 
-        $preFilter = $container->get(PreFilter::class);
+        if (null === $preFilter) {
+            $preFilter = $container->get(PreFilter::class);
+        }
         self::assertInstanceOf(PreFilter::class, $preFilter);
         $guard = $container->get(AlreadyPostedGuard::class);
         self::assertInstanceOf(AlreadyPostedGuard::class, $guard);
@@ -108,7 +116,7 @@ final class RunCycleCommandTest extends KernelTestCase
         $candidates = $this->fixtureCandidates();
 
         // Discover the real fixture; the Pre-filter + Guard run for real.
-        $discovery = new FakeKeepaDiscovery(new DealPage($candidates, new TokenMeter(60, 5, 5, 0)));
+        $discovery = new FakeKeepaDiscovery([new DealPage($candidates, new TokenMeter(60, 5, 5, 0))]);
 
         // Pick two known surviving ASINs (golden set) and return snapshots for them
         // only — a third surviving ASIN with no snapshot must be skipped silently.
@@ -218,6 +226,82 @@ final class RunCycleCommandTest extends KernelTestCase
         self::assertFalse(property_exists($a, 'verdict'));
     }
 
+    public function testPaginatesToTheNextPageWhenAPageYieldsNoAttestedDeals(): void
+    {
+        // Page 0's only survivor is price-valid but UNATTESTED (no found deal);
+        // page 1's survivor is attested. With the target unmet after page 0, the
+        // Cycle must walk to page 1 to record the deal.
+        $discovery = new FakeKeepaDiscovery([
+            new DealPage([$this->passingCandidate('PAGE0AAAAA')], new TokenMeter(60, 5, 5, 0)),
+            new DealPage([$this->passingCandidate('PAGE1BBBBB')], new TokenMeter(60, 5, 5, 0)),
+        ]);
+        $creators = new FakeCreatorsClient([
+            'PAGE0AAAAA' => $this->snapshot('PAGE0AAAAA', attested: false),
+            'PAGE1BBBBB' => $this->snapshot('PAGE1BBBBB', attested: true),
+        ]);
+
+        // A permissive Pre-filter so the synthetic candidates survive regardless
+        // of the production Criteria wired in the container.
+        $tester = $this->command($discovery, $creators, new PreFilter(new Criteria(), new GuardThresholds()));
+        $exit = $tester->execute([], ['verbosity' => OutputInterface::VERBOSITY_VERBOSE]);
+
+        self::assertSame(Command::SUCCESS, $exit);
+
+        $cycleRun = $this->em->getRepository(CycleRun::class)->findOneBy([]);
+        self::assertInstanceOf(CycleRun::class, $cycleRun);
+
+        // Both pages were searched and contributed to the funnel; only page 1's
+        // attested survivor became a found deal.
+        self::assertSame(2, $cycleRun->getRawCount());
+        self::assertSame(2, $cycleRun->getSurvivingCount());
+        self::assertSame(2, $cycleRun->getSnapshottedCount());
+
+        $asins = array_map(
+            static fn (FoundDeal $d): string => $d->getAsin(),
+            $cycleRun->getFoundDeals()->toArray(),
+        );
+        self::assertSame(['PAGE1BBBBB'], $asins);
+
+        // Verbose output shows the walk reached page 1.
+        self::assertStringContainsString('page 1', $tester->getDisplay());
+    }
+
+    private function passingCandidate(string $asin): Candidate
+    {
+        // Values mirror PreFilterTest::passingCandidate — they clear the default
+        // Criteria and Outlier Guards.
+        return new Candidate(
+            asin: $asin,
+            title: 'A fine deal',
+            imageUrl: '',
+            currentPriceCents: 5000,
+            avg30Cents: 9000,
+            avg90Cents: 10000,
+            dropPercent90: 50,
+            salesRankDrops90: 5,
+            salesRank: 10000,
+            ratingStarsTimesTen: 45,
+            rootCategory: 281052031,
+            categories: [281052031],
+        );
+    }
+
+    private function snapshot(string $asin, bool $attested): LiveSnapshot
+    {
+        return new LiveSnapshot(
+            asin: $asin,
+            priceCents: 4999,
+            availability: 'IN_STOCK',
+            condition: 'New',
+            merchantId: 'AMZN-DE',
+            savingsPercent: $attested ? 30 : null,
+            savingBasisType: $attested ? 'WAS_PRICE' : 'LIST_PRICE',
+            hasDealDetails: $attested,
+            violatesMap: false,
+            detailPageUrl: \sprintf('https://www.amazon.de/dp/%s?tag=t-21&linkCode=ogi', $asin),
+        );
+    }
+
     public function testRunLockRejectsAConcurrentCycle(): void
     {
         $lockFactory = self::getContainer()->get(LockFactory::class);
@@ -229,7 +313,7 @@ final class RunCycleCommandTest extends KernelTestCase
 
         try {
             $discovery = new FakeKeepaDiscovery(
-                new DealPage($this->fixtureCandidates(), new TokenMeter(60, 5, 5, 0)),
+                [new DealPage($this->fixtureCandidates(), new TokenMeter(60, 5, 5, 0))],
             );
             $creators = new FakeCreatorsClient([]);
 
@@ -248,7 +332,7 @@ final class RunCycleCommandTest extends KernelTestCase
     public function testCreatorsErrorSkipsCleanlyWithNoPartialCycle(): void
     {
         $discovery = new FakeKeepaDiscovery(
-            new DealPage($this->fixtureCandidates(), new TokenMeter(60, 5, 5, 0)),
+            [new DealPage($this->fixtureCandidates(), new TokenMeter(60, 5, 5, 0))],
         );
         $creators = new ThrowingCreatorsClient();
 
@@ -274,13 +358,17 @@ final class RunCycleCommandTest extends KernelTestCase
 
 final readonly class FakeKeepaDiscovery implements KeepaDiscovery
 {
-    public function __construct(private DealPage $page)
+    /**
+     * @param list<DealPage> $pages one DealPage per page index; requests beyond
+     *                              the list return an empty page (end of feed)
+     */
+    public function __construct(private array $pages)
     {
     }
 
     public function fetchDealPage(int $page = 0): DealPage
     {
-        return $this->page;
+        return $this->pages[$page] ?? new DealPage([], new TokenMeter(60, 5, 5, 0));
     }
 }
 

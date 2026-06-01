@@ -40,6 +40,16 @@ final class RunCycleCommand extends Command
 {
     private const string LOCK_KEY = 'deal-pipeline-cycle';
 
+    /** Flat Keepa token cost of one `/deal` page; we stop before we can't fund one. */
+    private const int KEEPA_PAGE_COST = 5;
+
+    /**
+     * @param int $maxPages            hard ceiling on `/deal` pages fetched per Cycle,
+     *                                 independent of $targetAttestedDeals (cost bound)
+     * @param int $targetAttestedDeals stop paging once this many Amazon-attested deals
+     *                                 are recorded; attestation is rare (~1/10), so a
+     *                                 page may yield none and we walk to the next
+     */
     public function __construct(
         private readonly KeepaDiscovery $discovery,
         private readonly PreFilter $preFilter,
@@ -47,6 +57,8 @@ final class RunCycleCommand extends Command
         private readonly CreatorsClient $creators,
         private readonly EntityManagerInterface $entityManager,
         private readonly LockFactory $lockFactory,
+        private readonly int $maxPages = 3,
+        private readonly int $targetAttestedDeals = 5,
     ) {
         parent::__construct();
     }
@@ -79,74 +91,112 @@ final class RunCycleCommand extends Command
     private function runCycle(SymfonyStyle $io): int
     {
         $startedAt = new \DateTimeImmutable();
-
-        // 2. Discover raw candidates.
-        $rawCandidates = $this->discovery->fetchDealPage()->candidates;
-        $rawCount = \count($rawCandidates);
-        $io->writeln(
-            \sprintf('<info>Discover:</info> %d raw candidates from Keepa.', $rawCount),
-            OutputInterface::VERBOSITY_VERBOSE,
-        );
-
-        // 3. Pre-filter, then Already-Posted Guard -> surviving candidates.
-        $preFilterResult = $this->preFilter->apply(...$rawCandidates);
-        $preFiltered = $preFilterResult->survivors;
-        $this->reportPreFilter($io, $rawCount, $preFilterResult);
-
-        $survivors = $this->alreadyPostedGuard->apply(...$preFiltered)->survivors;
-        $survivingCount = \count($survivors);
-        $io->writeln(
-            \sprintf(
-                '<info>Already-Posted Guard:</info> %d -> %d survivors (%d already posted).',
-                \count($preFiltered),
-                $survivingCount,
-                \count($preFiltered) - $survivingCount,
-            ),
-            OutputInterface::VERBOSITY_VERBOSE,
-        );
-
-        // 4. Live Snapshot for the surviving ASINs. A survivor absent from the map
-        //    is skipped; a snapshot confirms Price Validity but only an
-        //    Amazon-attested one (dealDetails / WAS_PRICE) becomes a found deal.
-        $asins = array_map(static fn (Candidate $c): string => $c->asin, $survivors);
-        $snapshots = [] === $asins ? [] : $this->creators->fetchSnapshots(...$asins);
-        $io->writeln(
-            \sprintf(
-                '<info>Live Snapshot:</info> %d ASINs sent, %d snapshots returned.',
-                \count($asins),
-                \count($snapshots),
-            ),
-            OutputInterface::VERBOSITY_VERBOSE,
-        );
-
-        // 5. Record one CycleRun plus one FoundDeal per attested deal. Strict dial:
-        //    a price-valid-but-unattested snapshot is counted, not published, so
-        //    `snapshottedCount` (Price Validity) stays distinct from the attested
-        //    found-deal rows (`count($cycleRun->getFoundDeals())`).
         $cycleRun = new CycleRun($startedAt);
+
+        $rawCount = 0;
+        $survivingCount = 0;
         $snapshottedCount = 0;
         $snapshotRows = [];
-        foreach ($survivors as $candidate) {
-            $snapshot = $snapshots[$candidate->asin] ?? null;
-            if (null === $snapshot) {
-                continue;
-            }
-            ++$snapshottedCount;
+        $seenAsins = [];
+        $pagesFetched = 0;
 
-            $attested = $snapshot->hasAmazonAttestation();
-            if ($attested) {
-                $cycleRun->addFoundDeal(FoundDeal::fromSnapshot($candidate, $snapshot, $startedAt));
+        // Walk Keepa `/deal` pages until we have enough attested deals or hit the
+        // page ceiling. Attestation is rare (~1/10), so an early page often yields
+        // none; we step to the next (deeper, less-discounted) page rather than give
+        // up. The CycleRun funnel counts accumulate across the pages we searched.
+        for ($page = 0; $page < $this->maxPages; ++$page) {
+            if (\count($cycleRun->getFoundDeals()) >= $this->targetAttestedDeals) {
+                break;
             }
 
-            $snapshotRows[] = [
-                $snapshot->asin,
-                $this->euros($snapshot->priceCents),
-                $snapshot->availability ?? '—',
-                $snapshot->savingBasisType ?? '—',
-                $snapshot->hasDealDetails ? 'yes' : 'no',
-                $attested ? '<info>✓ attested</info>' : '<comment>skipped</comment>',
-            ];
+            // 2. Discover one page of raw candidates.
+            $dealPage = $this->discovery->fetchDealPage($page);
+            ++$pagesFetched;
+            $rawCandidates = $dealPage->candidates;
+            $io->writeln(
+                \sprintf('<info>Discover:</info> page %d — %d raw candidates from Keepa.', $page, \count($rawCandidates)),
+                OutputInterface::VERBOSITY_VERBOSE,
+            );
+            if ([] === $rawCandidates) {
+                break; // ran off the end of the feed; no deeper pages exist
+            }
+            $rawCount += \count($rawCandidates);
+
+            // 3. Pre-filter, then Already-Posted Guard -> surviving candidates.
+            $preFilterResult = $this->preFilter->apply(...$rawCandidates);
+            $this->reportPreFilter($io, \count($rawCandidates), $preFilterResult);
+            $guarded = $this->alreadyPostedGuard->apply(...$preFilterResult->survivors)->survivors;
+
+            // Drop ASINs already snapshotted earlier this Cycle (pages can repeat
+            // an ASIN); a survivor is processed at most once per Cycle.
+            $survivors = [];
+            foreach ($guarded as $candidate) {
+                if (!isset($seenAsins[$candidate->asin])) {
+                    $survivors[] = $candidate;
+                }
+            }
+            $survivingCount += \count($survivors);
+            $io->writeln(
+                \sprintf(
+                    '<info>Already-Posted Guard:</info> page %d — %d -> %d new survivors.',
+                    $page,
+                    \count($preFilterResult->survivors),
+                    \count($survivors),
+                ),
+                OutputInterface::VERBOSITY_VERBOSE,
+            );
+
+            // 4. Live Snapshot for this page's surviving ASINs. A survivor absent
+            //    from the map is skipped; a snapshot confirms Price Validity but
+            //    only an Amazon-attested one (dealDetails / WAS_PRICE) is recorded.
+            $asins = array_map(static fn (Candidate $c): string => $c->asin, $survivors);
+            $snapshots = [] === $asins ? [] : $this->creators->fetchSnapshots(...$asins);
+            $io->writeln(
+                \sprintf('<info>Live Snapshot:</info> page %d — %d ASINs sent, %d returned.', $page, \count($asins), \count($snapshots)),
+                OutputInterface::VERBOSITY_VERBOSE,
+            );
+
+            // 5. Record one FoundDeal per attested deal (Strict dial). A
+            //    price-valid-but-unattested snapshot is counted in
+            //    snapshottedCount but not recorded.
+            foreach ($survivors as $candidate) {
+                $seenAsins[$candidate->asin] = true;
+                $snapshot = $snapshots[$candidate->asin] ?? null;
+                if (null === $snapshot) {
+                    continue;
+                }
+                ++$snapshottedCount;
+
+                $attested = $snapshot->hasAmazonAttestation();
+                if ($attested) {
+                    $cycleRun->addFoundDeal(FoundDeal::fromSnapshot($candidate, $snapshot, $startedAt));
+                }
+
+                $snapshotRows[] = [
+                    $snapshot->asin,
+                    $this->euros($snapshot->priceCents),
+                    $snapshot->availability ?? '—',
+                    $snapshot->savingBasisType ?? '—',
+                    $snapshot->hasDealDetails ? 'yes' : 'no',
+                    $attested ? '<info>✓ attested</info>' : '<comment>skipped</comment>',
+                ];
+
+                if (\count($cycleRun->getFoundDeals()) >= $this->targetAttestedDeals) {
+                    break; // target reached mid-page
+                }
+            }
+
+            // Stop before a page we cannot fund. The live meter rode in on this
+            // response; on a cache hit it is stale, but $maxPages still bounds us.
+            if ($dealPage->meter->tokensLeft < self::KEEPA_PAGE_COST) {
+                $io->writeln(
+                    \sprintf('<info>Keepa budget:</info> %d tokens left (< %d) — stopping pagination.', $dealPage->meter->tokensLeft, self::KEEPA_PAGE_COST),
+                    OutputInterface::VERBOSITY_VERBOSE,
+                );
+                break;
+            }
         }
+
         $attestedCount = \count($cycleRun->getFoundDeals());
         $this->reportSnapshots($io, $snapshotRows);
 
@@ -159,7 +209,8 @@ final class RunCycleCommand extends Command
         $this->entityManager->flush();
 
         $io->success(\sprintf(
-            'Cycle complete: %d raw candidates, %d surviving, %d snapshotted, %d attested deals recorded.',
+            'Cycle complete: %d page(s) searched — %d raw, %d surviving, %d snapshotted, %d attested deals recorded.',
+            $pagesFetched,
             $rawCount,
             $survivingCount,
             $snapshottedCount,
