@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp Gateway — Pairing</title>
+    <link rel="preconnect" href="https://fonts.bunny.net">
+    <link href="https://fonts.bunny.net/css?family=inter:400,600,700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #1e1e1e;
+            --surface: #252525;
+            --border: #333333;
+            --text: #ffffff;
+            --muted: #9a9a9a;
+            --success: #4caf7d;
+            --info: #6b9bd2;
+            --danger: #e05c4b;
+            --highlight: #c9970a;
+        }
+        @media (prefers-color-scheme: light) {
+            :root {
+                --bg: #f5f0e8;
+                --surface: #ede8df;
+                --border: #ccc6bb;
+                --text: #1a1a1a;
+                --muted: #6b6258;
+                --success: #3a8c63;
+                --info: #4f7cb0;
+                --danger: #c0432f;
+                --highlight: #a87c08;
+            }
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1.5rem;
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            line-height: 1.6;
+        }
+        .card {
+            width: 100%;
+            max-width: 28rem;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 0.75rem;
+            padding: 1.75rem;
+        }
+        h1 { font-size: 1.25rem; font-weight: 600; margin: 0 0 0.5rem; }
+        .desc { color: var(--muted); margin: 0 0 1.5rem; font-size: 0.95rem; }
+        button {
+            width: 100%;
+            padding: 0.7rem 1rem;
+            border: none;
+            border-radius: 0.5rem;
+            font: inherit;
+            font-weight: 600;
+            color: #fff;
+            cursor: pointer;
+        }
+        button:disabled { opacity: 0.6; cursor: progress; }
+        .btn-primary { background: var(--info); }
+        .btn-danger { background: var(--danger); }
+        .muted { color: var(--muted); font-size: 0.9rem; }
+        .qr-frame {
+            display: flex;
+            justify-content: center;
+            background: #fff;
+            border: 1px solid var(--border);
+            border-radius: 0.5rem;
+            padding: 1rem;
+            margin: 0.75rem 0;
+        }
+        .qr-frame img { width: 16rem; height: 16rem; }
+        .center { text-align: center; }
+        .stack > * + * { margin-top: 0.75rem; }
+        .row { display: flex; align-items: center; gap: 0.5rem; }
+        .alert {
+            margin-top: 1rem;
+            padding: 0.6rem 0.8rem;
+            border-radius: 0.5rem;
+            border: 1px solid var(--danger);
+            color: var(--danger);
+            font-size: 0.9rem;
+        }
+        .dot { width: 0.6rem; height: 0.6rem; border-radius: 50%; background: var(--success); }
+        [hidden] { display: none !important; }
+    </style>
+</head>
+<body>
+    <main class="card">
+        <h1>Connect WhatsApp</h1>
+        <p class="desc">
+            Pair the WhatsApp account that owns or admins the channels you want to post to.
+        </p>
+
+        <div class="stack">
+            <button id="connect" class="btn-primary" hidden>Connect WhatsApp</button>
+
+            <div id="starting" class="row muted" hidden>
+                <span>Starting WAHA session…</span>
+            </div>
+
+            <div id="scan" class="stack" hidden>
+                <p class="muted">
+                    Open WhatsApp on your phone, go to
+                    <strong>Settings → Linked Devices → Link a Device</strong>, and scan this code.
+                </p>
+                <div class="qr-frame">
+                    <img id="qr" src="" alt="WhatsApp pairing QR code">
+                </div>
+                <p class="muted center">The QR refreshes every few seconds.</p>
+            </div>
+
+            <div id="working" class="stack" hidden>
+                <div class="row">
+                    <span class="dot"></span>
+                    <span>WhatsApp connected.</span>
+                </div>
+                <button id="logout" class="btn-danger">Logout</button>
+            </div>
+        </div>
+
+        <div id="error" class="alert" hidden></div>
+    </main>
+
+    <script>
+        (function () {
+            // The WAHA X-Api-Key is NEVER present here: this page only ever calls
+            // the open, same-origin /session* routes, which proxy WAHA server-side.
+            const els = {
+                connect: document.getElementById('connect'),
+                starting: document.getElementById('starting'),
+                scan: document.getElementById('scan'),
+                working: document.getElementById('working'),
+                logout: document.getElementById('logout'),
+                qr: document.getElementById('qr'),
+                error: document.getElementById('error'),
+            };
+
+            let status = {{ initialStatus|json_encode|raw }};
+            let qrTick = 0;
+            let qrTimer = null;
+
+            function showError(msg) {
+                els.error.textContent = msg;
+                els.error.hidden = !msg;
+            }
+
+            function render() {
+                const connectStates = ['STOPPED', 'FAILED', 'UNKNOWN'];
+                els.connect.hidden = !connectStates.includes(status);
+                els.starting.hidden = status !== 'STARTING';
+                els.scan.hidden = status !== 'SCAN_QR_CODE';
+                els.working.hidden = status !== 'WORKING';
+
+                if (status === 'SCAN_QR_CODE') {
+                    els.qr.src = '/session/qr?t=' + qrTick;
+                    if (!qrTimer) {
+                        qrTimer = setInterval(function () {
+                            qrTick += 1;
+                            els.qr.src = '/session/qr?t=' + qrTick;
+                        }, 5000);
+                    }
+                } else if (qrTimer) {
+                    clearInterval(qrTimer);
+                    qrTimer = null;
+                }
+            }
+
+            async function poll() {
+                try {
+                    const res = await fetch('/session');
+                    const data = await res.json();
+                    status = data.status;
+                    render();
+                } catch (e) {
+                    showError(e.message);
+                }
+            }
+
+            els.connect.addEventListener('click', async function () {
+                els.connect.disabled = true;
+                showError('');
+                try {
+                    const res = await fetch('/session/start', { method: 'POST' });
+                    if (!res.ok) throw new Error('start failed: ' + res.status);
+                    status = 'STARTING';
+                    render();
+                } catch (e) {
+                    showError(e.message);
+                } finally {
+                    els.connect.disabled = false;
+                }
+            });
+
+            els.logout.addEventListener('click', async function () {
+                if (!confirm("Disconnect WhatsApp? You'll need to re-pair to send again.")) return;
+                await fetch('/session/logout', { method: 'POST' });
+                status = 'STOPPED';
+                render();
+            });
+
+            render();
+            setInterval(poll, 2000);
+        })();
+    </script>
+</body>
+</html>

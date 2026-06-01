@@ -1,4 +1,9 @@
 parameters:
+    # WAHA connection, injected by docker-compose. Defaults mirror the prototype
+    # so the app boots (and tests run) without the env present.
+    env(WAHA_URL): 'http://waha:3000'
+    env(WAHA_API_KEY): ''
+    env(WAHA_SESSION): 'default'
 
 services:
     _defaults:
@@ -9,3 +14,13 @@ services:
         resource: '../src/'
         exclude:
             - '../src/Kernel.php'
+
+    # The single holder of the WAHA X-Api-Key (ADR 0002). Public so functional
+    # tests can swap in a WahaClient backed by MockHttpClient; it carries no
+    # secret beyond the env-injected key and is only reachable in-process.
+    App\Waha\WahaClient:
+        public: true
+        arguments:
+            $baseUrl: '%env(WAHA_URL)%'
+            $apiKey: '%env(WAHA_API_KEY)%'
+            $session: '%env(WAHA_SESSION)%'
