@@ -1,0 +1,164 @@
+package engine
+
+import (
+	"context"
+	"errors"
+	"sync"
+
+	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/store"
+	"go.mau.fi/whatsmeow/store/sqlstore"
+	"go.mau.fi/whatsmeow/types/events"
+	"google.golang.org/protobuf/proto"
+
+	_ "modernc.org/sqlite" // pure-Go SQLite driver, registers driver name "sqlite"
+)
+
+// companionDisplayName is shown in WhatsApp's linked-devices list.
+const companionDisplayName = "Deal Promoter"
+
+// sqliteDSN builds a SQLite DSN for the pure-Go driver with foreign keys on.
+func sqliteDSN(path string) string {
+	return "file:" + path + "?_pragma=foreign_keys(1)"
+}
+
+// errNotImplemented is returned by Engine methods whose slices land later.
+var errNotImplemented = errors.New("not implemented")
+
+// ShouldConnectOnBoot decides whether the engine connects on startup: it
+// connects only when a device is already stored (a previous pairing). With no
+// stored device it stays disconnected until the operator pairs (slice 4).
+func ShouldConnectOnBoot(hasStoredDevice bool) bool {
+	return hasStoredDevice
+}
+
+// LiveConnState maps a live whatsmeow client's observable state onto our
+// ConnState enum. It is pure so the heart of Status() can be unit-tested
+// without a real WhatsApp connection.
+//
+//   - connected && loggedIn        -> WORKING
+//   - connecting / socket-up-only  -> STARTING (handshake in progress)
+//   - a connect error, no socket   -> FAILED
+//   - otherwise (idle/logged out)  -> STOPPED
+func LiveConnState(connected, loggedIn, connecting bool, lastErr error) ConnState {
+	switch {
+	case connected && loggedIn:
+		return ConnStateWorking
+	case connected:
+		return ConnStateStarting
+	case lastErr != nil:
+		return ConnStateFailed
+	case connecting:
+		return ConnStateStarting
+	default:
+		return ConnStateStopped
+	}
+}
+
+// RealEngine is the whatsmeow-backed Engine. Slice 3 implements the
+// store/boot-connect/status foundation; pairing, channels and send land in
+// later slices and currently return errNotImplemented.
+type RealEngine struct {
+	container *sqlstore.Container
+	client    *whatsmeow.Client
+
+	mu         sync.Mutex
+	connecting bool
+	lastErr    error
+}
+
+// NewRealEngine opens the SQLite store at the given path, constructs a
+// whatsmeow client with auto-reconnect enabled, and connects on boot when a
+// device is already stored. With no stored device it stays disconnected.
+func NewRealEngine(storePath string) (*RealEngine, error) {
+	ctx := context.Background()
+
+	store.DeviceProps.Os = proto.String(companionDisplayName)
+
+	container, err := sqlstore.New(ctx, "sqlite", sqliteDSN(storePath), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	device, err := container.GetFirstDevice(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	client := whatsmeow.NewClient(device, nil)
+	client.EnableAutoReconnect = true
+
+	e := &RealEngine{container: container, client: client}
+	client.AddEventHandler(e.onEvent)
+
+	if ShouldConnectOnBoot(device.ID != nil) {
+		e.mu.Lock()
+		e.connecting = true
+		e.mu.Unlock()
+		if err := client.Connect(); err != nil {
+			e.mu.Lock()
+			e.connecting = false
+			e.lastErr = err
+			e.mu.Unlock()
+		}
+	}
+
+	return e, nil
+}
+
+// onEvent updates the connecting/lastErr bookkeeping from client events so
+// Status() can report STARTING/WORKING/FAILED accurately.
+func (e *RealEngine) onEvent(evt any) {
+	switch evt.(type) {
+	case *events.Connected:
+		e.mu.Lock()
+		e.connecting = false
+		e.lastErr = nil
+		e.mu.Unlock()
+	case *events.Disconnected:
+		e.mu.Lock()
+		// A disconnect kicks off whatsmeow's auto-reconnect, so we're
+		// handshaking again rather than idle.
+		e.connecting = true
+		e.mu.Unlock()
+	case *events.LoggedOut:
+		e.mu.Lock()
+		e.connecting = false
+		e.lastErr = nil
+		e.mu.Unlock()
+	}
+}
+
+// Status derives the gateway status word from the live client state.
+func (e *RealEngine) Status() string {
+	e.mu.Lock()
+	connecting := e.connecting
+	lastErr := e.lastErr
+	e.mu.Unlock()
+
+	return MapConnState(LiveConnState(
+		e.client.IsConnected(),
+		e.client.IsLoggedIn(),
+		connecting,
+		lastErr,
+	))
+}
+
+// Close shuts down the client and the underlying store.
+func (e *RealEngine) Close() error {
+	if e.client != nil {
+		e.client.Disconnect()
+	}
+	if e.container != nil {
+		return e.container.Close()
+	}
+	return nil
+}
+
+func (e *RealEngine) StartPairing() error          { return errNotImplemented }
+func (e *RealEngine) Logout() error                { return errNotImplemented }
+func (e *RealEngine) QRImage() ([]byte, bool)      { return nil, false }
+func (e *RealEngine) Channels() ([]Channel, error) { return nil, errNotImplemented }
+func (e *RealEngine) Send(req SendRequest) (string, error) {
+	return "", errNotImplemented
+}

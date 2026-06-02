@@ -14,8 +14,16 @@ func main() {
 		port = "8080"
 	}
 
-	fake := &engine.FakeEngine{State: engine.ConnStateStopped}
-	srv := engine.NewServer(fake)
+	storePath := os.Getenv("WHATSMEOW_STORE_PATH")
+	if storePath == "" {
+		storePath = "store.db"
+	}
+
+	eng, err := engine.NewRealEngine(storePath)
+	if err != nil {
+		log.Fatalf("engine init error: %v", err)
+	}
+	srv := engine.NewServer(eng)
 
 	log.Printf("whatsmeow-engine listening on :%s", port)
 	if err := http.ListenAndServe(":"+port, srv); err != nil {
