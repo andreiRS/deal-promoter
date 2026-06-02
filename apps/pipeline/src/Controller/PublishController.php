@@ -19,7 +19,7 @@ use Symfony\Component\Routing\Attribute\Route;
  * the FoundDeal row, and redirects back to the review page (POST-redirect-GET).
  *
  * The controller depends on the ChannelPublisher interface only; swapping in a
- * real implementation (e.g. WahaChannelPublisher) requires no change here.
+ * real implementation (e.g. HttpChannelPublisher) requires no change here.
  */
 final class PublishController extends AbstractController
 {

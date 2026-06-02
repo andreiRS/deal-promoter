@@ -12,11 +12,11 @@ use Psr\Log\LoggerInterface;
  * Stub publisher: logs intent and does nothing else.
  *
  * This is the only ChannelPublisher implementation wired for now. Drop in a
- * real implementation (e.g. WahaChannelPublisher) by rebinding the
+ * real implementation (e.g. HttpChannelPublisher) by rebinding the
  * ChannelPublisher service alias in services.yaml — no controller or template
  * change required.
  *
- * It makes NO WhatsApp/WAHA/HTTP call and does NOT write the DB.
+ * It makes NO channel/HTTP call and does NOT write the DB.
  * The posted_deal row is written only by a future real publisher after a
  * successful channel delivery.
  */

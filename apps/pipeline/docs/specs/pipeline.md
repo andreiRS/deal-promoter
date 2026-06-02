@@ -45,7 +45,7 @@ Integration clients live in `packages/shared`: a **hand-rolled Keepa client** (p
 
 ### Out of scope
 
-- **Publishing to WhatsApp.** No WAHA client, no send, no `whatsapp-announcer` port this session. The Publish button is a stub. (Future: its own PHP container.)
+- **Publishing to WhatsApp.** No channel publisher, no send, no `whatsapp-announcer` port this session. The Publish button is a stub. (Future: its own PHP container.)
 - **The Deal Gate verdict.** No publish/skip decision and no volume-vs-trust dial this session; record raw signals only and decide after eyeballing data.
 - **Scheduling infrastructure.** No cron/scheduler container and no Symfony Scheduler worker; Cycles are run manually. The run-lock is built in so cron drops in later.
 - **Pacing, Repost Policy, alerting (Telegram), post-text templates.** All depend on publishing, which is out.
@@ -68,7 +68,7 @@ Integration clients live in `packages/shared`: a **hand-rolled Keepa client** (p
 
 - **Stack:** PHP 8.5 (8.4 minimum, the floor Symfony 8 requires), Symfony 8.x (`^8.0`; pin toward the 8.4 LTS when it lands, since 8.0 has a short support window). Datastore is a local Postgres container; persistence via Doctrine ORM 3 / DBAL 4 behind a storage interface. Run-lock via the Symfony Lock component (Postgres store).
 - **Repo:** monorepo — `apps/pipeline` (this app) + `packages/shared` (Keepa client, `CreatorsClient` interface + SDK-backed impl, storage interface) wired as a Composer `path` repository. The official Creators SDK v1.2.0 is vendored under `packages/` as a `path` repo (it ships as a download, not on Packagist).
-- **Containers this session:** `app` (Symfony built-in server, runs both the console command and the page) + `postgres`. WAHA / whatsapp-service remain documented future placeholders in the compose file. One root `docker-compose`.
+- **Containers this session:** `app` (Symfony built-in server, runs both the console command and the page) + `postgres`. whatsapp-service remains a documented future placeholder in the compose file. One root `docker-compose`.
 - **APIs:** Keepa metered by tokens — Pre-filter hard on the cheap `/deal` call; deep-fetch only surviving candidates. Creators is the PA-API successor; affiliate links must be the API-provided `detailPageURL`. Credential is v3.2 → LWA (the SDK handles the auth fork natively).
 - **Boundaries:** `price.money.amount` is a decimal euro; convert to integer cents at the edge and never cross the Keepa-cents / Creators-euros boundary unconverted. Never compare Keepa `avg*` to `stats.*` with `===` — use a tolerance.
 - **Tooling:** PHPUnit 13 (requires PHP 8.4+), PHPStan 2.x at `max` level (Symfony extension), PHP-CS-Fixer 3 (Symfony ruleset). `bun` (not `npm`) for any JS tooling. Secrets via `.env` (only `.env.example` is committed/edited).

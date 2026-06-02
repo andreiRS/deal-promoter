@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Channel;
 
 use App\Channel\Exception\PublishFailed;
-use App\Channel\WahaChannelPublisher;
+use App\Channel\HttpChannelPublisher;
 use App\Entity\PostedDeal;
 use DealPromoter\Shared\Channel\PublishableDeal;
 use Doctrine\ORM\EntityManagerInterface;
@@ -14,7 +14,7 @@ use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 
 /**
- * Unit tests for WahaChannelPublisher (slice 5).
+ * Unit tests for HttpChannelPublisher (slice 5).
  *
  * No DB: the EntityManager is mocked and the HTTP client is a MockHttpClient.
  *
@@ -27,7 +27,7 @@ use Symfony\Component\HttpClient\Response\MockResponse;
  *  6. Message body is the exact German-formatted string sent as `text`, with
  *     `chatId` set to the configured channel and the X-Internal-Key header present.
  */
-final class WahaChannelPublisherTest extends TestCase
+final class HttpChannelPublisherTest extends TestCase
 {
     private const SERVICE_URL = 'http://whatsapp-service:8000';
     private const CHANNEL_ID = '120363426158608543@newsletter';
@@ -187,12 +187,12 @@ final class WahaChannelPublisherTest extends TestCase
         self::assertStringStartsWith($price.' ', $priceLine);
 
         $emoji = substr($priceLine, \strlen($price.' '));
-        self::assertContains($emoji, WahaChannelPublisher::SALE_EMOJIS);
+        self::assertContains($emoji, HttpChannelPublisher::SALE_EMOJIS);
     }
 
-    private function publisher(MockHttpClient $http, EntityManagerInterface $em): WahaChannelPublisher
+    private function publisher(MockHttpClient $http, EntityManagerInterface $em): HttpChannelPublisher
     {
-        return new WahaChannelPublisher($http, $em, self::SERVICE_URL, self::CHANNEL_ID, self::INTERNAL_KEY);
+        return new HttpChannelPublisher($http, $em, self::SERVICE_URL, self::CHANNEL_ID, self::INTERNAL_KEY);
     }
 
     /**
