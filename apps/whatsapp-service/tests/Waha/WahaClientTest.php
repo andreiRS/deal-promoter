@@ -62,20 +62,21 @@ final class WahaClientTest extends TestCase
             ['response_headers' => ['Content-Type' => 'application/json']],
         );
         $http = new MockHttpClient($response);
-        $client = new WahaClient($http, 'http://engine:8080', 'unused-key', 'unused-session');
+        $client = new WahaClient($http, 'http://engine:8080');
 
         $client->getSessionStatus();
 
         self::assertSame('http://engine:8080/session', $response->getRequestUrl());
         // Engine is keyless — no X-Api-Key header must be sent
-        self::assertNotContains('X-Api-Key: unused-key', $response->getRequestOptions()['headers'] ?? []);
+        $headers = $response->getRequestOptions()['headers'] ?? [];
+        self::assertEmpty(array_filter($headers, static fn (string $h): bool => str_starts_with($h, 'X-Api-Key')));
     }
 
     public function testStartSessionPostsToEngineStartPath(): void
     {
         $response = new MockResponse('', ['http_code' => 200]);
         $http = new MockHttpClient($response);
-        $client = new WahaClient($http, 'http://engine:8080', 'unused-key', 'unused-session');
+        $client = new WahaClient($http, 'http://engine:8080');
 
         $client->startSession();
 
@@ -105,7 +106,7 @@ final class WahaClientTest extends TestCase
     {
         $response = new MockResponse('', ['http_code' => 200]);
         $http = new MockHttpClient($response);
-        $client = new WahaClient($http, 'http://engine:8080', 'unused-key', 'unused-session');
+        $client = new WahaClient($http, 'http://engine:8080');
 
         $client->logoutSession();
 
@@ -120,7 +121,7 @@ final class WahaClientTest extends TestCase
             ['response_headers' => ['Content-Type' => 'image/png']],
         );
         $http = new MockHttpClient($response);
-        $client = new WahaClient($http, 'http://engine:8080', 'unused-key', 'unused-session');
+        $client = new WahaClient($http, 'http://engine:8080');
 
         $qr = $client->getQrImage();
 
@@ -173,7 +174,7 @@ final class WahaClientTest extends TestCase
             ['response_headers' => ['Content-Type' => 'application/json']],
         );
         $http = new MockHttpClient($response);
-        $client = new WahaClient($http, 'http://engine:8080', 'unused-key', 'unused-session');
+        $client = new WahaClient($http, 'http://engine:8080');
 
         $client->listOwnedChannels();
 
@@ -203,7 +204,7 @@ final class WahaClientTest extends TestCase
             ['response_headers' => ['Content-Type' => 'application/json']],
         );
         $http = new MockHttpClient($response);
-        $client = new WahaClient($http, 'http://engine:8080', 'unused-key', 'unused-session');
+        $client = new WahaClient($http, 'http://engine:8080');
 
         $result = $client->sendText('abc@newsletter', 'Hello!');
 
@@ -228,7 +229,7 @@ final class WahaClientTest extends TestCase
             ['response_headers' => ['Content-Type' => 'application/json']],
         );
         $http = new MockHttpClient($response);
-        $client = new WahaClient($http, 'http://engine:8080', 'unused-key', 'unused-session');
+        $client = new WahaClient($http, 'http://engine:8080');
 
         $preview = ['url' => 'https://example.com/deal', 'title' => 'Great Deal', 'image' => 'https://example.com/img.jpg'];
         $result = $client->sendText('abc@newsletter', 'Check this!', $preview);
@@ -254,7 +255,7 @@ final class WahaClientTest extends TestCase
             ['response_headers' => ['Content-Type' => 'application/json']],
         );
         $http = new MockHttpClient($response);
-        $client = new WahaClient($http, 'http://engine:8080', 'unused-key', 'unused-session');
+        $client = new WahaClient($http, 'http://engine:8080');
 
         $client->sendText('abc@newsletter', 'No preview');
 
@@ -277,8 +278,6 @@ final class WahaClientTest extends TestCase
         return new WahaClient(
             new MockHttpClient($response),
             'http://engine:8080',
-            'unused-key',
-            'unused-session',
         );
     }
 }

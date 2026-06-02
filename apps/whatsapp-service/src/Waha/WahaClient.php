@@ -11,19 +11,13 @@ use Symfony\Contracts\HttpClient\ResponseInterface;
  * The single class that talks to the whatsmeow engine.
  *
  * The engine is keyless and exposes clean paths with no /api prefix and no
- * {session} segment. The $apiKey and $session constructor args are accepted for
- * backward-compatible wiring (removed in the compose cutover slice) but are not
- * used by any request.
+ * {session} segment, so it needs only a base URL.
  */
 final class WahaClient
 {
     public function __construct(
         private readonly HttpClientInterface $http,
         private readonly string $baseUrl,
-        /** @phpstan-ignore property.onlyWritten (removed in slice 9 compose cutover) */
-        private readonly string $apiKey,
-        /** @phpstan-ignore property.onlyWritten (removed in slice 9 compose cutover) */
-        private readonly string $session,
     ) {
     }
 

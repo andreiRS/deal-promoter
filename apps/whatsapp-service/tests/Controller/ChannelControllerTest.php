@@ -405,7 +405,7 @@ final class ChannelControllerTest extends WebTestCase
     {
         self::getContainer()->set(
             WahaClient::class,
-            new WahaClient(new MockHttpClient($responses), 'http://engine:8080', 'unused-key', 'unused-session'),
+            new WahaClient(new MockHttpClient($responses), 'http://engine:8080'),
         );
     }
 
@@ -417,7 +417,7 @@ final class ChannelControllerTest extends WebTestCase
     {
         self::getContainer()->set(
             WahaClient::class,
-            new WahaClient(new MockHttpClient($response), 'http://engine:8080', 'unused-key', 'unused-session'),
+            new WahaClient(new MockHttpClient($response), 'http://engine:8080'),
         );
     }
 }

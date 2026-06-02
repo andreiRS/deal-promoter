@@ -133,7 +133,7 @@ final class SessionControllerTest extends WebTestCase
     {
         self::getContainer()->set(
             WahaClient::class,
-            new WahaClient(new MockHttpClient($responses), 'http://waha:3000', 'secret', 'default'),
+            new WahaClient(new MockHttpClient($responses), 'http://waha:3000'),
         );
     }
 }
