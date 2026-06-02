@@ -6,7 +6,8 @@ PHP 8.5 / Symfony 8 / Docker monorepo.
 
 **What ships today:** the headless **Deal Pipeline** (`apps/pipeline`) with its
 review page, **plus** a standalone **WhatsApp gateway** (`apps/whatsapp-service`)
-that delivers a reviewed deal to a real WhatsApp channel via [WAHA](GLOSSARY.md).
+that delivers a reviewed deal to a real WhatsApp channel via a self-hosted
+[whatsmeow](GLOSSARY.md) engine.
 The full chain runs end to end: discover → snapshot → record → review → **publish**.
 Clicking *Publish* on a recorded deal now posts the German-formatted affiliate
 message to the channel and writes it to Recorded Price History so it is never
@@ -14,7 +15,7 @@ re-posted.
 
 The full vision lives in [`docs/specs/product.md`](docs/specs/product.md); the
 pipeline build spec in [`apps/pipeline/docs/specs/pipeline.md`](apps/pipeline/docs/specs/pipeline.md);
-the gateway spec in [`apps/whatsapp-service/docs/specs/whatsapp-service.md`](apps/whatsapp-service/docs/specs/whatsapp-service.md);
+the engine spec in [`docs/specs/whatsmeow-engine.md`](docs/specs/whatsmeow-engine.md);
 the canonical vocabulary in [`GLOSSARY.md`](GLOSSARY.md). Read the glossary first
 if a capitalised term below is unfamiliar.
 
@@ -41,13 +42,14 @@ must stay green (PHPUnit + PHPStan max + CS-Fixer); the `test` DB needs
 
 ```
 apps/pipeline/                 Symfony 8 app: the run-cycle command + review page
-apps/whatsapp-service/          Symfony 8 gateway: the only thing that talks to WAHA
+apps/whatsapp-service/          Symfony 8 gateway: the only thing that talks to the engine
+apps/whatsmeow-engine/         self-hosted Go WhatsApp-Web engine (custom channel preview)
 packages/shared/               cross-cutting integration code (reused across apps)
 packages/creatorsapi-php-sdk/  vendored official Amazon Creators SDK v1.2.0 (path repo)
 experiments/                   throwaway TypeScript probes that proved the funnel (01-09)
 docs/                          product spec + API research briefs + ADRs
 GLOSSARY.md                    canonical terms (Candidate, Pre-filter, Live Snapshot, ...)
-docker-compose.yml             app + postgres + waha + whatsapp-service
+docker-compose.yml             app + postgres + whatsmeow-engine + whatsapp-service
 ```
 
 It is a monorepo. `apps/pipeline` requires `packages/shared` and the vendored SDK
@@ -124,7 +126,7 @@ flowchart LR
 `GET /` renders the **latest** Cycle's recorded deals as a read-only table (title,
 image, price, Keepa %, Amazon savings + basis, attestation flags, affiliate link).
 Each row with an affiliate link has a **Publish button** that POSTs through the
-`ChannelPublisher` seam to the live `WahaChannelPublisher` (below); rows without a
+`ChannelPublisher` seam to the live `HttpChannelPublisher` (below); rows without a
 link cannot be published and show no button. A successful publish marks the row
 and records the deal; a failure flashes the error and persists nothing, so the
 button stays clickable.
@@ -140,7 +142,7 @@ logger.
 flowchart TB
     subgraph app ["apps/pipeline (Symfony, infra-bound)"]
         CMD["RunCycleCommand"]
-        IMPL["CachingKeepaDiscovery · SdkCreatorsClient<br/>DoctrineRecordedPriceHistory · WahaChannelPublisher"]
+        IMPL["CachingKeepaDiscovery · SdkCreatorsClient<br/>DoctrineRecordedPriceHistory · HttpChannelPublisher"]
     end
     subgraph shared ["packages/shared (dependency-light seams)"]
         IFACE["KeepaDiscovery · CreatorsClient<br/>RecordedPriceHistory · ChannelPublisher"]
@@ -156,7 +158,7 @@ flowchart TB
 ```
 
 The command depends only on the seams; swapping an implementation (e.g. a real
-`WahaChannelPublisher`) is a one-line rebind in `services.yaml`.
+`HttpChannelPublisher`) is a one-line rebind in `services.yaml`.
 
 | Area | In `shared` | App-side implementation |
 |------|-------------|-------------------------|
@@ -165,7 +167,7 @@ The command depends only on the seams; swapping an implementation (e.g. a real
 | Already-Posted | `AlreadyPostedGuard`, `RepostPolicy`, `NeverRepostPolicy` | (none) |
 | Creators | `CreatorsClient` interface, `LiveSnapshot` | `SdkCreatorsClient` (wraps the SDK) |
 | Storage | `RecordedPriceHistory` interface | `DoctrineRecordedPriceHistory` |
-| Channel | `ChannelPublisher`, `PublishableDeal` interfaces | `WahaChannelPublisher` (live) · `NullChannelPublisher` (used under `when@test`) |
+| Channel | `ChannelPublisher`, `PublishableDeal` interfaces | `HttpChannelPublisher` (live) · `NullChannelPublisher` (used under `when@test`) |
 
 ## The WhatsApp gateway
 
@@ -174,13 +176,13 @@ that talks to `whatsmeow-engine` — the self-hosted Go WhatsApp-Web engine
 ([ADR 0001](docs/adr/0001-standalone-whatsapp-gateway.md)). The engine is keyless
 and **internal-only** (no published host port): only the gateway reaches it over
 the compose network. `apps/whatsapp-service` carries no database and no
-`packages/shared`; its `WahaClient` is the single component that calls the engine.
+`packages/shared`; its `WhatsAppClient` is the single component that calls the engine.
 
 ```mermaid
 flowchart LR
     REV["Review page<br/>Publish button"]
-    PUB["<b>WahaChannelPublisher</b><br/>(apps/pipeline)<br/>format · POST /send · record"]
-    GW["<b>whatsapp-service</b><br/>gateway · WahaClient<br/>guards + delivery"]
+    PUB["<b>HttpChannelPublisher</b><br/>(apps/pipeline)<br/>format · POST /send · record"]
+    GW["<b>whatsapp-service</b><br/>gateway · WhatsAppClient<br/>guards + delivery"]
     ENG["whatsmeow-engine<br/>(Go WhatsApp-Web engine)<br/>internal-only"]
     CH(["WhatsApp channel<br/>@newsletter"])
     DB[("posted_deal")]
@@ -211,9 +213,9 @@ The gateway also serves the **attended** surfaces a machine cannot drive: a
 pairing page (scan a QR to connect a WhatsApp account, persisted in the engine's
 SQLite volume) and an open, host-bound `POST /ui/send` manual send form. Both the machine `/send`
 and the human `/ui/send` funnel through **one** delivery path — same
-`@newsletter` + non-empty guards, same `WahaClient::sendText`.
+`@newsletter` + non-empty guards, same `WhatsAppClient::sendText`.
 
-`WahaChannelPublisher` lives in `apps/pipeline` (not `shared`) because it depends
+`HttpChannelPublisher` lives in `apps/pipeline` (not `shared`) because it depends
 on Doctrine + `PostedDeal` ([ADR 0003](docs/adr/0003-publisher-owns-posted-deal.md)).
 It formats the German message (`{title}` / `12,99 €` / blank line / affiliate
 URL), POSTs it, and on a 2xx **writes one `posted_deal` row**; on any failure it
@@ -233,7 +235,7 @@ reads next Cycle to suppress a re-post.
   survivors. The command stops paginating before a page it cannot fund.
 - Tables: `cycle_run` (funnel counts + owned rows + `next_start_page`, the
   cross-run [Page Cursor](GLOSSARY.md)), `found_deal` (Keepa signals + snapshot
-  facts), `posted_deal` (Recorded Price History; written by `WahaChannelPublisher`
+  facts), `posted_deal` (Recorded Price History; written by `HttpChannelPublisher`
   on a successful publish).
 
 ## Running it
@@ -267,7 +269,7 @@ API key and Amazon Creators LWA credentials (`CREATORS_CREDENTIAL_ID`/`SECRET`,
 `CREATORS_VERSION=3.2`, marketplace, `AMAZON_PARTNER_TAG`). To publish, it also
 needs the WhatsApp keys: `WHATSAPP_INTERNAL_KEY` (pipeline ↔ gateway — the same
 value flows to both sides) and `WHATSAPP_CHANNEL_ID` (the target `@newsletter`
-channel). The engine is keyless, so there is no `WAHA_API_KEY`. See `.env.example`.
+channel). The engine is keyless, so there is no engine API key. See `.env.example`.
 
 ### Publishing locally
 
@@ -288,7 +290,7 @@ surface for testing a channel without the pipeline.
   `SdkCreatorsClient`, `CachingKeepaDiscovery` arguments). The cross-run page
   cursor is automatic and needs no tuning.
 - **Swapping the publisher** — rebind the `ChannelPublisher` alias in
-  `services.yaml` (live `WahaChannelPublisher` in prod/dev; `NullChannelPublisher`
+  `services.yaml` (live `HttpChannelPublisher` in prod/dev; `NullChannelPublisher`
   under `when@test` so tests make no real HTTP call); nothing else changes.
 
 ## Research & learnings
@@ -337,6 +339,6 @@ PHPUnit boots the **`test`** database, so it must be migrated first — `make se
 does this, or run `make migrate-test` after adding a migration. Tests covering the
 paid APIs run against recorded fixtures
 (`packages/shared/tests/fixtures/`); a live smoke is a manual follow-up, never a
-merge blocker. The same applies to the gateway: WAHA is mocked in tests
+merge blocker. The same applies to the gateway: the engine is mocked in tests
 (`docker compose exec whatsapp-service composer qa`), and pairing + a real channel
 delivery are verified by hand, since no QR scan or live send can be unit-tested.

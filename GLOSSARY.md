@@ -40,7 +40,7 @@ The Live Snapshot and Deal Gate are the (unnamed) transition between *surviving*
 
 ## Channel
 
-The single WhatsApp channel (`@newsletter`) we publish to, reached through WAHA. Modeled as config so more channels and category-to-channel routing can be added later, but only one exists in this cycle.
+The single WhatsApp channel (`@newsletter`) we publish to, reached through the [whatsmeow Engine](#whatsmeow-engine). Modeled as config so more channels and category-to-channel routing can be added later, but only one exists in this cycle.
 
 ## Criteria
 
@@ -70,7 +70,7 @@ The counterpart to [Price Validity](#price-validity): a [Live Snapshot](#live-sn
 
 ## Gateway
 
-The stateless service (`whatsapp-service`) that delivers a text message to the [Channel](#channel) through [WAHA](#waha), and the only component that holds the WAHA credentials. It is told a channel and a text and sends them, enforcing only that the destination is a `@newsletter` channel; it knows nothing about deals, prices, or [Recorded Price History](#recorded-price-history).
+The stateless service (`whatsapp-service`) that delivers a text message to the [Channel](#channel) through the [whatsmeow Engine](#whatsmeow-engine), and the only component that reaches it. It is told a channel and a text and sends them, enforcing only that the destination is a `@newsletter` channel; it knows nothing about deals, prices, or [Recorded Price History](#recorded-price-history).
 
 Distinct from the [Deal Pipeline](#deal-pipeline), which decides *what* and *when* to publish: the Gateway is the dumb last mile the Pipeline drives. The Pipeline owns the [Deal Gate](#deal-gate) decision and the record; the Gateway owns delivery only.
 
@@ -133,8 +133,8 @@ A Reference Price establishes magnitude, never [Price Validity](#price-validity)
 
 The rule for when an already-posted ASIN may be posted again. Leading shape: post once, then a cooldown, then re-post only on a meaningful further drop below the last posted price. Enforced by the [Already-Posted Guard](#already-posted-guard).
 
-## WAHA
+## whatsmeow Engine
 
-The third-party Dockerized HTTP bridge that drives a logged-in WhatsApp account through WhatsApp Web, exposing send, session, and channel operations over HTTP. The [Gateway](#gateway) is the only component that talks to it.
+The self-hosted Go service (`apps/whatsmeow-engine`, built on `go.mau.fi/whatsmeow`) that drives a logged-in WhatsApp account through WhatsApp Web, exposing send, session, and channel operations over HTTP. It builds its own link-preview card — including a `JPEGThumbnail` it fetches from the deal's image CDN — so Amazon's product page is never scraped for a preview. Keyless and internal-only (no published host port); the [Gateway](#gateway) is the only component that reaches it, over the compose network.
 
-Unofficial and the single most fragile dependency: it carries a ban risk and its session can drop, which is why the architecture isolates it behind the [Gateway](#gateway) and keeps the rest of the system fail-safe around it. Not an official WhatsApp API.
+Still an unofficial WhatsApp-Web path and the single most fragile dependency: it carries a ban risk and its session can drop, which is why the architecture isolates it behind the [Gateway](#gateway) and keeps the rest of the system fail-safe around it. Not an official WhatsApp API.
