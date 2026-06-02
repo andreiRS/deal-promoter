@@ -141,6 +141,11 @@ final class NullChannelPublisherTest extends KernelTestCase
             {
                 return 'https://www.amazon.de/dp/'.$this->asin.'?tag=test-21';
             }
+
+            public function getImageUrl(): ?string
+            {
+                return null;
+            }
         };
     }
 }

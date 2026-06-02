@@ -130,7 +130,13 @@ final class WahaChannelPublisherTest extends TestCase
 
         $em = $this->createMock(EntityManagerInterface::class);
         $publisher = $this->publisher($http, $em);
-        $publisher->publish($this->fakeDeal('B000FMT001', 1299, 'https://www.amazon.de/dp/B000FMT001?tag=t-21', 'Cool Gadget'));
+        $publisher->publish($this->fakeDeal(
+            'B000FMT001',
+            1299,
+            'https://www.amazon.de/dp/B000FMT001?tag=t-21',
+            'Cool Gadget',
+            'https://images.amazon.com/cool-gadget.jpg',
+        ));
 
         self::assertSame('POST', $captured['method']);
         self::assertStringEndsWith('/send', $captured['url']);
@@ -138,10 +144,15 @@ final class WahaChannelPublisherTest extends TestCase
         $headerLine = implode("\n", $this->normalizeHeaders($captured['headers']));
         self::assertStringContainsStringIgnoringCase('X-Internal-Key: '.self::INTERNAL_KEY, $headerLine);
 
-        /** @var array{chatId: string, text: string} $decoded */
+        /** @var array{chatId: string, text: string, preview: array{url: string, title: string, image: string}} $decoded */
         $decoded = json_decode((string) $captured['body'], true, 512, \JSON_THROW_ON_ERROR);
         self::assertSame(self::CHANNEL_ID, $decoded['chatId']);
         $this->assertMessageShape('12,99 €', 'https://www.amazon.de/dp/B000FMT001?tag=t-21', $decoded['text']);
+
+        self::assertArrayHasKey('preview', $decoded);
+        self::assertSame('https://www.amazon.de/dp/B000FMT001?tag=t-21', $decoded['preview']['url']);
+        self::assertSame('Cool Gadget', $decoded['preview']['title']);
+        self::assertSame('https://images.amazon.com/cool-gadget.jpg', $decoded['preview']['image']);
     }
 
     public function testGermanThousandsSeparatorInMessage(): void
@@ -202,14 +213,20 @@ final class WahaChannelPublisherTest extends TestCase
         return $lines;
     }
 
-    private function fakeDeal(string $asin, ?int $priceCents, ?string $affiliateUrl, string $title = 'Test Deal Title'): PublishableDeal
-    {
-        return new class($asin, $priceCents, $affiliateUrl, $title) implements PublishableDeal {
+    private function fakeDeal(
+        string $asin,
+        ?int $priceCents,
+        ?string $affiliateUrl,
+        string $title = 'Test Deal Title',
+        ?string $imageUrl = 'https://images.amazon.com/sample.jpg',
+    ): PublishableDeal {
+        return new class($asin, $priceCents, $affiliateUrl, $title, $imageUrl) implements PublishableDeal {
             public function __construct(
                 private readonly string $asin,
                 private readonly ?int $priceCents,
                 private readonly ?string $affiliateUrl,
                 private readonly string $title,
+                private readonly ?string $imageUrl,
             ) {
             }
 
@@ -231,6 +248,11 @@ final class WahaChannelPublisherTest extends TestCase
             public function getAffiliateUrl(): ?string
             {
                 return $this->affiliateUrl;
+            }
+
+            public function getImageUrl(): ?string
+            {
+                return $this->imageUrl;
             }
         };
     }

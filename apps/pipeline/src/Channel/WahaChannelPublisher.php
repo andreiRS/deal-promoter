@@ -61,7 +61,15 @@ final readonly class WahaChannelPublisher implements ChannelPublisher
         try {
             $response = $this->http->request('POST', rtrim($this->serviceUrl, '/').'/send', [
                 'headers' => ['X-Internal-Key' => $this->internalKey],
-                'json' => ['chatId' => $this->channelId, 'text' => $message],
+                'json' => [
+                    'chatId' => $this->channelId,
+                    'text' => $message,
+                    'preview' => [
+                        'url' => $affiliateUrl,
+                        'title' => $deal->getTitle(),
+                        'image' => (string) ($deal->getImageUrl() ?? ''),
+                    ],
+                ],
             ]);
             $status = $response->getStatusCode();
         } catch (TransportExceptionInterface $e) {
