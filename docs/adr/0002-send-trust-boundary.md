@@ -1,7 +1,7 @@
 # 2. Trust boundary between pipeline, gateway, and UI
 
 Date: 2026-06-01
-Status: Accepted
+Status: Accepted (amended 2026-06-02 by ADR 0005 — see Amendment)
 
 ## Context
 
@@ -39,3 +39,19 @@ Neither the WAHA `X-Api-Key` nor the `X-Internal-Key` ever reaches a browser.
   (`WHATSAPP_INTERNAL_KEY`), accepted as the cost of not leaking the WAHA key.
 - If the UI is ever exposed beyond localhost, this decision must be revisited —
   the open routes would then need real auth.
+
+## Amendment (2026-06-02, ADR 0005)
+
+The WAHA→whatsmeow swap (ADR 0005) removes the *second* secret this ADR was
+written around. The whatsmeow engine is **keyless and internal-only** (no
+published host port), so:
+
+- The WAHA `X-Api-Key` is gone. `WahaClient` no longer holds an engine key; it
+  carries only the engine base URL. There is no key to leak to a browser, and
+  `WAHA_API_KEY`/`WAHA_SESSION` are dropped from the gateway env.
+- The engine↔gateway trust boundary is now the **compose network**, not a header:
+  the gateway is the engine's sole reachable client.
+- The `X-Internal-Key` gate on `POST /send` (machine path) is **unchanged** and
+  still fail-closed — it remains the one secret in this picture, and the rest of
+  the decision (split machine/human paths, one shared in-process `WahaClient`,
+  host-bound open UI routes) stands as written.
