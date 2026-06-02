@@ -3,7 +3,9 @@ package engine
 // FakeEngine is an in-memory Engine for the dev/boot server and tests.
 // Real implementations (slice 3+) replace it.
 type FakeEngine struct {
-	State ConnState
+	State     ConnState
+	SendID    string // returned by Send
+	SendError error  // returned by Send if non-nil
 }
 
 func (f *FakeEngine) Status() string {
@@ -29,5 +31,5 @@ func (f *FakeEngine) Channels() ([]Channel, error) {
 }
 
 func (f *FakeEngine) Send(req SendRequest) (string, error) {
-	return "", nil
+	return f.SendID, f.SendError
 }

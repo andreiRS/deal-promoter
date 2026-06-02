@@ -22,9 +22,6 @@ func sqliteDSN(path string) string {
 	return "file:" + path + "?_pragma=foreign_keys(1)"
 }
 
-// errNotImplemented is returned by Engine methods whose slices land later.
-var errNotImplemented = errors.New("not implemented")
-
 // ShouldConnectOnBoot decides whether the engine connects on startup: it
 // connects only when a device is already stored (a previous pairing). With no
 // stored device it stays disconnected until the operator pairs (slice 4).
@@ -255,8 +252,4 @@ func (e *RealEngine) Logout() error {
 	e.lastErr = nil
 	e.mu.Unlock()
 	return err
-}
-
-func (e *RealEngine) Send(req SendRequest) (string, error) {
-	return "", errNotImplemented
 }

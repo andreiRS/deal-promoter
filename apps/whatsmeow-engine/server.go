@@ -10,6 +10,7 @@ func NewServer(e Engine) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", handleHealth)
 	mux.HandleFunc("/session", handleSession(e))
+	mux.HandleFunc("/send", handleSend(e))
 	return mux
 }
 
