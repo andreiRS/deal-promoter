@@ -12,6 +12,12 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// defaultWarnLog is the package's default warn-level logger, shared by the
+// production Send path and the test stub constructor.
+func defaultWarnLog(format string, args ...any) {
+	log.Printf("[WARN] "+format, args...)
+}
+
 // BuildExtendedTextMessage constructs a waE2E.Message with an ExtendedTextMessage
 // carrying all link-preview fields. When thumbnail is nil or empty, JPEGThumbnail
 // is omitted; all other fields are always set.
@@ -42,38 +48,6 @@ type sendDeps struct {
 	fetchThumbnail func(url string) ([]byte, error)
 	sendMessage    sendFunc
 	warnLog        func(format string, args ...any)
-}
-
-// RealEngineStub is a thin wrapper around sendDeps used exclusively in tests
-// (via NewRealEngineWithStubs). It exercises the same Send logic path without
-// requiring a live whatsmeow connection.
-type RealEngineStub struct {
-	deps sendDeps
-}
-
-// NewRealEngineWithStubs constructs a RealEngineStub with injected fetcher and
-// sender stubs. Intended only for unit tests.
-func NewRealEngineWithStubs(
-	fetcher func(url string) ([]byte, error),
-	sender sendFunc,
-) *RealEngineStub {
-	return &RealEngineStub{
-		deps: sendDeps{
-			fetchThumbnail: fetcher,
-			sendMessage:    sender,
-			warnLog:        func(format string, args ...any) { log.Printf("[WARN] "+format, args...) },
-		},
-	}
-}
-
-// SetWarnLogger replaces the warn logging function (for test assertions).
-func (s *RealEngineStub) SetWarnLogger(fn func(format string, args ...any)) {
-	s.deps.warnLog = fn
-}
-
-// Send implements the send-with-degrade logic using injected stubs.
-func (s *RealEngineStub) Send(req SendRequest) (string, error) {
-	return sendWithDeps(s.deps, req)
 }
 
 // sendWithDeps is the pure send logic extracted so it can be shared by both
@@ -109,7 +83,7 @@ func (e *RealEngine) Send(req SendRequest) (string, error) {
 			}
 			return resp.ID, nil
 		},
-		warnLog: func(format string, args ...any) { log.Printf("[WARN] "+format, args...) },
+		warnLog: defaultWarnLog,
 	}
 	return sendWithDeps(deps, req)
 }

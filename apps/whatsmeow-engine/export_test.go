@@ -15,3 +15,10 @@ func SetHeldQRForTest(e *RealEngine, code string) {
 func ApplyQRItemForTest(e *RealEngine, item whatsmeow.QRChannelItem) {
 	e.applyQRItem(item)
 }
+
+// DispatchEventForTest routes one whatsmeow event through the engine's onEvent
+// handler, so the status-bookkeeping effects of lifecycle events (e.g.
+// LoggedOut) can be unit-tested without a live socket.
+func DispatchEventForTest(e *RealEngine, evt any) {
+	e.onEvent(evt)
+}

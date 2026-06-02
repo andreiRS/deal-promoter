@@ -34,9 +34,10 @@ func ShouldConnectOnBoot(hasStoredDevice bool) bool {
 // without a real WhatsApp connection.
 //
 //   - connected && loggedIn          -> WORKING (authenticated wins always)
+//   - a connect error, no socket     -> FAILED (an error is never masked by a
+//     stale held QR)
 //   - pendingQR && !loggedIn         -> SCAN_QR_CODE (a code is awaiting a scan)
 //   - connecting / socket-up-only    -> STARTING (handshake / post-scan)
-//   - a connect error, no socket     -> FAILED
 //   - otherwise (idle/logged out)    -> STOPPED
 //
 // pendingQR is true while StartPairing holds a QR string that has not yet been
@@ -47,6 +48,10 @@ func LiveConnState(connected, loggedIn, connecting, pendingQR bool, lastErr erro
 	switch {
 	case connected && loggedIn:
 		return ConnStateWorking
+	case lastErr != nil && !connected:
+		// A connect error with no live socket is a failure even if a stale QR
+		// is still held; it must not be masked by the pending code.
+		return ConnStateFailed
 	case pendingQR:
 		return ConnStateScanQR
 	case connected:
@@ -131,6 +136,9 @@ func (e *RealEngine) onEvent(evt any) {
 		e.mu.Lock()
 		e.connecting = false
 		e.lastErr = nil
+		// A logout invalidates any held QR (it became a dead code), so it must
+		// not keep deriving SCAN_QR_CODE.
+		e.qrCode = ""
 		e.mu.Unlock()
 	}
 }

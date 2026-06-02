@@ -7,7 +7,35 @@ import (
 	"testing"
 
 	engine "github.com/surdu/deal-promoter/apps/whatsmeow-engine"
+	"go.mau.fi/whatsmeow/types/events"
 )
+
+func TestLoggedOut_ClearsHeldQR(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "store.db")
+
+	e, err := engine.NewRealEngine(path)
+	if err != nil {
+		t.Fatalf("NewRealEngine: %v", err)
+	}
+	t.Cleanup(func() { _ = e.Close() })
+
+	// A QR is held (pairing in progress) -> status is SCAN_QR_CODE.
+	engine.SetHeldQRForTest(e, "2@somecode")
+	if got := e.Status(); got != "SCAN_QR_CODE" {
+		t.Fatalf("precondition: Status() = %q, want SCAN_QR_CODE", got)
+	}
+
+	// A LoggedOut event arrives while the QR is still held. The held QR is a
+	// dead code now, so it must be cleared and the status must not stay scannable.
+	engine.DispatchEventForTest(e, &events.LoggedOut{})
+
+	if got := e.Status(); got == "SCAN_QR_CODE" {
+		t.Errorf("after LoggedOut, Status() = %q, want not SCAN_QR_CODE", got)
+	}
+	if got := e.Status(); got != "STOPPED" {
+		t.Errorf("after LoggedOut, Status() = %q, want STOPPED", got)
+	}
+}
 
 func TestNewRealEngine_NoDevice_StatusStopped(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "store.db")
@@ -89,6 +117,8 @@ func TestLiveConnState_AllCombinations(t *testing.T) {
 		// Connect error with no live connection.
 		{"connect error, not connected", false, false, false, false, errConn, engine.ConnStateFailed},
 		{"connect error while still connecting", false, false, true, false, errConn, engine.ConnStateFailed},
+		// A connect error during pairing must not be masked by a stale held QR.
+		{"connect error with QR still held, not connected -> failed", false, false, true, true, errConn, engine.ConnStateFailed},
 
 		// No device / logged out / idle.
 		{"idle, nothing happening", false, false, false, false, nil, engine.ConnStateStopped},
