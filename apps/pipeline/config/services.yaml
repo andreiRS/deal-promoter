@@ -94,9 +94,9 @@ services:
             $pagesPerCycle: 2 # number of /deal pages fetched per cycle
 
     # --- Publish channel seam (P9 / slice 5) ---
-    # WahaChannelPublisher delivers to the WhatsApp channel via the slice-4 gateway.
+    # HttpChannelPublisher delivers to the slice-4 gateway over HTTP.
     # HttpClient + EntityManager autowire; the three strings come from env.
-    App\Channel\WahaChannelPublisher:
+    App\Channel\HttpChannelPublisher:
         arguments:
             $serviceUrl: '%env(WHATSAPP_SERVICE_URL)%'
             $channelId: '%env(WHATSAPP_CHANNEL_ID)%'
@@ -104,7 +104,7 @@ services:
 
     # Prod wiring: the seam resolves to the real publisher. Swap this alias to
     # rebind a different publisher with no controller/template change.
-    DealPromoter\Shared\Channel\ChannelPublisher: '@App\Channel\WahaChannelPublisher'
+    DealPromoter\Shared\Channel\ChannelPublisher: '@App\Channel\HttpChannelPublisher'
 
 when@test:
     services:

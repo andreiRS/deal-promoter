@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
-use App\Waha\SessionStatus;
-use App\Waha\WahaClient;
+use App\WhatsApp\SessionStatus;
+use App\WhatsApp\WhatsAppClient;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
@@ -13,12 +13,12 @@ use Symfony\Component\Routing\Attribute\Route;
 /**
  * The open, host-bound pairing page (ADR 0002). Renders the shell with an
  * initial session status; the inline client JS then drives the flow against the
- * `/session*` routes. The WAHA `X-Api-Key` lives only in {@see WahaClient} and
- * never reaches this template.
+ * `/session*` routes. Any channel credentials live only in {@see WhatsAppClient}
+ * and never reach this template.
  */
 final class IndexController extends AbstractController
 {
-    public function __construct(private readonly WahaClient $waha)
+    public function __construct(private readonly WhatsAppClient $engine)
     {
     }
 
@@ -26,7 +26,7 @@ final class IndexController extends AbstractController
     public function index(): Response
     {
         try {
-            $initialStatus = $this->waha->getSessionStatus();
+            $initialStatus = $this->engine->getSessionStatus();
         } catch (\Throwable) {
             $initialStatus = SessionStatus::UNKNOWN;
         }

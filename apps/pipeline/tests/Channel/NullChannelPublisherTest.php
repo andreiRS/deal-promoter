@@ -16,7 +16,7 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
  *
  * Verifies:
  *  1. publish() logs an info line containing the ASIN.
- *  2. No HTTP/WhatsApp/WAHA call is made (the null impl is the entire body).
+ *  2. No HTTP/WhatsApp call is made (the null impl is the entire body).
  *  3. The DI container wires ChannelPublisher -> NullChannelPublisher.
  *  4. The controller depends on the ChannelPublisher interface, not the concrete class.
  */
@@ -56,7 +56,7 @@ final class NullChannelPublisherTest extends KernelTestCase
     {
         // NullChannelPublisher has no other dependencies; its publish() body
         // is purely a logger call. If it compiles and calls publish() without
-        // throwing, there is no WAHA/HTTP interaction possible.
+        // throwing, there is no channel/HTTP interaction possible.
         $logger = new class extends AbstractLogger {
             /** @var list<array{level: string, message: string, context: array<mixed>}> */
             public array $records = [];
@@ -140,6 +140,11 @@ final class NullChannelPublisherTest extends KernelTestCase
             public function getAffiliateUrl(): ?string
             {
                 return 'https://www.amazon.de/dp/'.$this->asin.'?tag=test-21';
+            }
+
+            public function getImageUrl(): ?string
+            {
+                return null;
             }
         };
     }

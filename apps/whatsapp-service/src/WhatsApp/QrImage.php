@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Waha;
+namespace App\WhatsApp;
 
 /**
  * Result of a QR fetch: either the raw image bytes plus their content type, or

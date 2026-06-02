@@ -1,0 +1,137 @@
+package engine_test
+
+import (
+	"errors"
+	"os"
+	"path/filepath"
+	"testing"
+
+	engine "github.com/surdu/deal-promoter/apps/whatsmeow-engine"
+	"go.mau.fi/whatsmeow/types/events"
+)
+
+func TestLoggedOut_ClearsHeldQR(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "store.db")
+
+	e, err := engine.NewRealEngine(path)
+	if err != nil {
+		t.Fatalf("NewRealEngine: %v", err)
+	}
+	t.Cleanup(func() { _ = e.Close() })
+
+	// A QR is held (pairing in progress) -> status is SCAN_QR_CODE.
+	engine.SetHeldQRForTest(e, "2@somecode")
+	if got := e.Status(); got != "SCAN_QR_CODE" {
+		t.Fatalf("precondition: Status() = %q, want SCAN_QR_CODE", got)
+	}
+
+	// A LoggedOut event arrives while the QR is still held. The held QR is a
+	// dead code now, so it must be cleared and the status must not stay scannable.
+	engine.DispatchEventForTest(e, &events.LoggedOut{})
+
+	if got := e.Status(); got == "SCAN_QR_CODE" {
+		t.Errorf("after LoggedOut, Status() = %q, want not SCAN_QR_CODE", got)
+	}
+	if got := e.Status(); got != "STOPPED" {
+		t.Errorf("after LoggedOut, Status() = %q, want STOPPED", got)
+	}
+}
+
+func TestNewRealEngine_NoDevice_StatusStopped(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "store.db")
+
+	e, err := engine.NewRealEngine(path)
+	if err != nil {
+		t.Fatalf("NewRealEngine: %v", err)
+	}
+	t.Cleanup(func() { _ = e.Close() })
+
+	// Real type must satisfy the Engine interface.
+	var _ engine.Engine = e
+
+	if got := e.Status(); got != "STOPPED" {
+		t.Errorf("Status() with no stored device = %q, want STOPPED", got)
+	}
+}
+
+func TestNewRealEngine_StoreOpensAndPersistsAcrossRestarts(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "store.db")
+
+	// First boot: store opens cleanly and the DB file is created.
+	e1, err := engine.NewRealEngine(path)
+	if err != nil {
+		t.Fatalf("first NewRealEngine: %v", err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("store file not created at %s: %v", path, err)
+	}
+	if err := e1.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	// Reopen the same path: the persisted store opens cleanly (the testable
+	// core of "persists across restarts" without a live device).
+	e2, err := engine.NewRealEngine(path)
+	if err != nil {
+		t.Fatalf("reopen NewRealEngine: %v", err)
+	}
+	t.Cleanup(func() { _ = e2.Close() })
+}
+
+func TestShouldConnectOnBoot(t *testing.T) {
+	if !engine.ShouldConnectOnBoot(true) {
+		t.Errorf("ShouldConnectOnBoot(hasStoredDevice=true) = false, want true")
+	}
+	if engine.ShouldConnectOnBoot(false) {
+		t.Errorf("ShouldConnectOnBoot(hasStoredDevice=false) = true, want false")
+	}
+}
+
+func TestLiveConnState_AllCombinations(t *testing.T) {
+	errConn := errors.New("connect failed")
+
+	cases := []struct {
+		name       string
+		connected  bool
+		loggedIn   bool
+		connecting bool
+		pendingQR  bool
+		lastErr    error
+		want       engine.ConnState
+	}{
+		// Connected + authenticated wins over everything else.
+		{"connected and logged in", true, true, false, false, nil, engine.ConnStateWorking},
+		{"connected and logged in despite stale connecting flag", true, true, true, false, nil, engine.ConnStateWorking},
+		{"connected and logged in despite stale error", true, true, false, false, errConn, engine.ConnStateWorking},
+		{"logged in wins even with a pending QR still held", true, true, false, true, nil, engine.ConnStateWorking},
+
+		// Pairing: a QR code is held and not yet scanned -> operator must scan.
+		{"pending QR, not logged in -> scan", false, false, true, true, nil, engine.ConnStateScanQR},
+		{"pending QR while socket up but not logged in -> scan", true, false, true, true, nil, engine.ConnStateScanQR},
+
+		// Mid-handshake: a connect is in progress but not yet authenticated.
+		{"connecting, not yet connected", false, false, true, false, nil, engine.ConnStateStarting},
+		{"connected socket but not yet logged in (handshake)", true, false, true, false, nil, engine.ConnStateStarting},
+		{"connected socket, not logged in, no connecting flag", true, false, false, false, nil, engine.ConnStateStarting},
+
+		// Connect error with no live connection.
+		{"connect error, not connected", false, false, false, false, errConn, engine.ConnStateFailed},
+		{"connect error while still connecting", false, false, true, false, errConn, engine.ConnStateFailed},
+		// A connect error during pairing must not be masked by a stale held QR.
+		{"connect error with QR still held, not connected -> failed", false, false, true, true, errConn, engine.ConnStateFailed},
+
+		// No device / logged out / idle.
+		{"idle, nothing happening", false, false, false, false, nil, engine.ConnStateStopped},
+		{"logged in flag but socket down, no error", false, true, false, false, nil, engine.ConnStateStopped},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := engine.LiveConnState(tc.connected, tc.loggedIn, tc.connecting, tc.pendingQR, tc.lastErr)
+			if got != tc.want {
+				t.Errorf("LiveConnState(%v,%v,%v,pendingQR=%v,err=%v) = %v, want %v",
+					tc.connected, tc.loggedIn, tc.connecting, tc.pendingQR, tc.lastErr, got, tc.want)
+			}
+		})
+	}
+}

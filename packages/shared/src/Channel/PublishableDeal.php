@@ -20,4 +20,6 @@ interface PublishableDeal
     public function getSnapshotPriceCents(): ?int;
 
     public function getAffiliateUrl(): ?string;
+
+    public function getImageUrl(): ?string;
 }

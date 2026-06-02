@@ -13,18 +13,19 @@ use Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 /**
- * Real publisher: delivers a deal to the WhatsApp channel via the slice-4 gateway.
+ * Real publisher: delivers a deal to a configured gateway over HTTP (slice-4).
  *
  * Lives app-side (not packages/shared) because it depends on Doctrine + PostedDeal
- * (ADR 0003). The gateway is the only component holding WAHA credentials; this
- * publisher knows nothing of the WAHA X-Api-Key (ADR 0002) — it authenticates to
- * the gateway with X-Internal-Key alone.
+ * (ADR 0003). It knows nothing about the downstream channel; the gateway is the
+ * only component holding channel credentials (ADR 0002) — this publisher
+ * authenticates to it with X-Internal-Key alone and could point at a different
+ * gateway by changing $serviceUrl.
  *
  * Contract with the gateway (POST /send): JSON {chatId, text}; 2xx {ok:true,...}
  * on success, 401/400/502 otherwise. On a 2xx response a posted_deal row is
  * written; on any failure nothing is persisted and a PublishFailed is thrown.
  */
-final readonly class WahaChannelPublisher implements ChannelPublisher
+final readonly class HttpChannelPublisher implements ChannelPublisher
 {
     /**
      * Sale emojis; one is picked at random per message to keep posts lively.
@@ -61,7 +62,15 @@ final readonly class WahaChannelPublisher implements ChannelPublisher
         try {
             $response = $this->http->request('POST', rtrim($this->serviceUrl, '/').'/send', [
                 'headers' => ['X-Internal-Key' => $this->internalKey],
-                'json' => ['chatId' => $this->channelId, 'text' => $message],
+                'json' => [
+                    'chatId' => $this->channelId,
+                    'text' => $message,
+                    'preview' => [
+                        'url' => $affiliateUrl,
+                        'title' => $deal->getTitle(),
+                        'image' => (string) ($deal->getImageUrl() ?? ''),
+                    ],
+                ],
             ]);
             $status = $response->getStatusCode();
         } catch (TransportExceptionInterface $e) {

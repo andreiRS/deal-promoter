@@ -170,23 +170,24 @@ The command depends only on the seams; swapping an implementation (e.g. a real
 ## The WhatsApp gateway
 
 `apps/whatsapp-service` is a standalone Symfony 8 app and the **only** component
-that holds WAHA credentials or talks to WAHA — the Dockerized, unofficial
-WhatsApp-Web HTTP bridge ([ADR 0001](docs/adr/0001-standalone-whatsapp-gateway.md)).
-It carries no database and no `packages/shared`; its `WahaClient` is the single
-holder of the WAHA `X-Api-Key`, which never reaches a browser or the pipeline.
+that talks to `whatsmeow-engine` — the self-hosted Go WhatsApp-Web engine
+([ADR 0001](docs/adr/0001-standalone-whatsapp-gateway.md)). The engine is keyless
+and **internal-only** (no published host port): only the gateway reaches it over
+the compose network. `apps/whatsapp-service` carries no database and no
+`packages/shared`; its `WahaClient` is the single component that calls the engine.
 
 ```mermaid
 flowchart LR
     REV["Review page<br/>Publish button"]
     PUB["<b>WahaChannelPublisher</b><br/>(apps/pipeline)<br/>format · POST /send · record"]
     GW["<b>whatsapp-service</b><br/>gateway · WahaClient<br/>guards + delivery"]
-    WAHA["WAHA<br/>(WhatsApp-Web bridge)"]
+    ENG["whatsmeow-engine<br/>(Go WhatsApp-Web engine)<br/>internal-only"]
     CH(["WhatsApp channel<br/>@newsletter"])
     DB[("posted_deal")]
 
     REV -->|POST /publish/id| PUB
     PUB -->|"POST /send<br/>X-Internal-Key"| GW
-    GW -->|"X-Api-Key<br/>sendText"| WAHA --> CH
+    GW -->|"sendText<br/>(keyless, compose-internal)"| ENG --> CH
     PUB -->|on 2xx| DB
 
     classDef a fill:#e8f0fe,stroke:#4285f4,color:#000;
@@ -194,21 +195,21 @@ flowchart LR
     classDef e fill:#fef7e0,stroke:#f9ab00,color:#000;
     class REV,PUB,DB a;
     class GW g;
-    class WAHA,CH e;
+    class ENG,CH e;
 ```
 
 **Two trust gates, kept separate** ([ADR 0002](docs/adr/0002-send-trust-boundary.md)):
 
 - `X-Internal-Key` gates the machine path. The pipeline calls the gateway's JSON
   `POST /send` with this header; a missing or wrong key returns **401 before any
-  guard or WAHA call**, and the gateway **fails closed** (a blank configured key
+  guard or engine call**, and the gateway **fails closed** (a blank configured key
   rejects everything).
-- `X-Api-Key` is WAHA's own key, lived entirely inside `WahaClient`. The pipeline
-  never sees it.
+- The engine itself needs no second key: it is keyless and reachable only on the
+  compose network, so the trust boundary is the network, not a header.
 
 The gateway also serves the **attended** surfaces a machine cannot drive: a
-pairing page (scan a QR to connect a WhatsApp account, persisted in `./.sessions`)
-and an open, host-bound `POST /ui/send` manual send form. Both the machine `/send`
+pairing page (scan a QR to connect a WhatsApp account, persisted in the engine's
+SQLite volume) and an open, host-bound `POST /ui/send` manual send form. Both the machine `/send`
 and the human `/ui/send` funnel through **one** delivery path — same
 `@newsletter` + non-empty guards, same `WahaClient::sendText`.
 
@@ -264,18 +265,19 @@ After adding a migration, run both `make migrate` and `make migrate-test` (or ju
 `.env` (git-ignored; only `.env.example` is committed and edited) needs a Keepa
 API key and Amazon Creators LWA credentials (`CREATORS_CREDENTIAL_ID`/`SECRET`,
 `CREATORS_VERSION=3.2`, marketplace, `AMAZON_PARTNER_TAG`). To publish, it also
-needs the WhatsApp keys: `WAHA_API_KEY` (gateway ↔ WAHA), `WHATSAPP_INTERNAL_KEY`
-(pipeline ↔ gateway — the same value flows to both sides), and
-`WHATSAPP_CHANNEL_ID` (the target `@newsletter` channel). See `.env.example`.
+needs the WhatsApp keys: `WHATSAPP_INTERNAL_KEY` (pipeline ↔ gateway — the same
+value flows to both sides) and `WHATSAPP_CHANNEL_ID` (the target `@newsletter`
+channel). The engine is keyless, so there is no `WAHA_API_KEY`. See `.env.example`.
 
 ### Publishing locally
 
-`docker compose up -d` brings up `waha` (`127.0.0.1:3000`) and the gateway
-(`127.0.0.1:8001`) alongside the pipeline (`8000`). One-time setup: open the
-gateway, click **Connect WhatsApp**, and scan the QR with the phone that owns the
-channel — the pairing persists in `./.sessions`. Then the review page's *Publish*
-button delivers live. The gateway's `/ui/send` form is a manual send surface for
-testing a channel without the pipeline.
+`docker compose up -d` brings up `whatsmeow-engine` (internal-only, no host port)
+and the gateway (`127.0.0.1:8001`) alongside the pipeline (`8000`). One-time
+setup: open the gateway, click **Connect WhatsApp**, and scan the QR with the
+phone that owns the channel — the pairing persists in the engine's SQLite volume
+(`whatsmeow_data`), so it survives container restarts. Then the review page's
+*Publish* button delivers live. The gateway's `/ui/send` form is a manual send
+surface for testing a channel without the pipeline.
 
 ## Tuning without code changes
 

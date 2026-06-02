@@ -47,25 +47,27 @@ services:
 
   # --- WhatsApp publish surface (ADR 0001) ---
   #
-  # WAHA is the Dockerized, unofficial WhatsApp-Web HTTP bridge. whatsapp-service is
-  # the standalone gateway (no DB, no packages/shared) and the only component that
-  # holds WAHA credentials and talks to it; the pipeline calls it over HTTP.
-  waha:
-    image: devlikeapro/waha:chrome      # NOT :latest — :chrome bundles the engine
-    platform: linux/amd64               # required on arm64 hosts
+  # whatsmeow-engine is the self-hosted Go WhatsApp-Web engine. It is keyless and
+  # internal-only (no published host port): only whatsapp-service reaches it over
+  # the compose network. whatsapp-service is the standalone gateway (no DB, no
+  # packages/shared) that the pipeline calls over HTTP.
+  whatsmeow-engine:
+    build:
+      context: apps/whatsmeow-engine
+      dockerfile: Dockerfile
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:3000:3000"           # host-local only
+    # No published port — reachable only as http://whatsmeow-engine:8080 on the
+    # compose network.
     environment:
-      WAHA_API_KEY: ${WAHA_API_KEY}
-      WHATSAPP_DEFAULT_ENGINE: WEBJS
-      WHATSAPP_DOWNLOAD_MEDIA: "false"
-      WAHA_DASHBOARD_USERNAME: admin
-      WAHA_DASHBOARD_PASSWORD: ${WAHA_DASHBOARD_PASSWORD}
-      WHATSAPP_SWAGGER_USERNAME: admin
-      WHATSAPP_SWAGGER_PASSWORD: ${WAHA_DASHBOARD_PASSWORD}
+      PORT: "8080"
+      WHATSMEOW_STORE_PATH: /data/store.db
     volumes:
-      - ./.sessions:/app/.sessions      # pairing persistence
+      - whatsmeow_data:/data            # SQLite pairing persistence across restarts
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   whatsapp-service:
     build:
@@ -79,12 +81,12 @@ services:
     ports:
       - "8001:8000"                     # distinct from the pipeline's 8000
     environment:
-      WAHA_URL: http://waha:3000
-      WAHA_API_KEY: ${WAHA_API_KEY}
-      WAHA_SESSION: default
+      ENGINE_URL: http://whatsmeow-engine:8080
       WHATSAPP_INTERNAL_KEY: ${WHATSAPP_INTERNAL_KEY}
     depends_on:
-      - waha
+      whatsmeow-engine:
+        condition: service_healthy
 
 volumes:
   postgres_data:
+  whatsmeow_data:
