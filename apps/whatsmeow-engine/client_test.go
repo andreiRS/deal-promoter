@@ -67,34 +67,40 @@ func TestLiveConnState_AllCombinations(t *testing.T) {
 		connected  bool
 		loggedIn   bool
 		connecting bool
+		pendingQR  bool
 		lastErr    error
 		want       engine.ConnState
 	}{
 		// Connected + authenticated wins over everything else.
-		{"connected and logged in", true, true, false, nil, engine.ConnStateWorking},
-		{"connected and logged in despite stale connecting flag", true, true, true, nil, engine.ConnStateWorking},
-		{"connected and logged in despite stale error", true, true, false, errConn, engine.ConnStateWorking},
+		{"connected and logged in", true, true, false, false, nil, engine.ConnStateWorking},
+		{"connected and logged in despite stale connecting flag", true, true, true, false, nil, engine.ConnStateWorking},
+		{"connected and logged in despite stale error", true, true, false, false, errConn, engine.ConnStateWorking},
+		{"logged in wins even with a pending QR still held", true, true, false, true, nil, engine.ConnStateWorking},
+
+		// Pairing: a QR code is held and not yet scanned -> operator must scan.
+		{"pending QR, not logged in -> scan", false, false, true, true, nil, engine.ConnStateScanQR},
+		{"pending QR while socket up but not logged in -> scan", true, false, true, true, nil, engine.ConnStateScanQR},
 
 		// Mid-handshake: a connect is in progress but not yet authenticated.
-		{"connecting, not yet connected", false, false, true, nil, engine.ConnStateStarting},
-		{"connected socket but not yet logged in (handshake)", true, false, true, nil, engine.ConnStateStarting},
-		{"connected socket, not logged in, no connecting flag", true, false, false, nil, engine.ConnStateStarting},
+		{"connecting, not yet connected", false, false, true, false, nil, engine.ConnStateStarting},
+		{"connected socket but not yet logged in (handshake)", true, false, true, false, nil, engine.ConnStateStarting},
+		{"connected socket, not logged in, no connecting flag", true, false, false, false, nil, engine.ConnStateStarting},
 
 		// Connect error with no live connection.
-		{"connect error, not connected", false, false, false, errConn, engine.ConnStateFailed},
-		{"connect error while still connecting", false, false, true, errConn, engine.ConnStateFailed},
+		{"connect error, not connected", false, false, false, false, errConn, engine.ConnStateFailed},
+		{"connect error while still connecting", false, false, true, false, errConn, engine.ConnStateFailed},
 
 		// No device / logged out / idle.
-		{"idle, nothing happening", false, false, false, nil, engine.ConnStateStopped},
-		{"logged in flag but socket down, no error", false, true, false, nil, engine.ConnStateStopped},
+		{"idle, nothing happening", false, false, false, false, nil, engine.ConnStateStopped},
+		{"logged in flag but socket down, no error", false, true, false, false, nil, engine.ConnStateStopped},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := engine.LiveConnState(tc.connected, tc.loggedIn, tc.connecting, tc.lastErr)
+			got := engine.LiveConnState(tc.connected, tc.loggedIn, tc.connecting, tc.pendingQR, tc.lastErr)
 			if got != tc.want {
-				t.Errorf("LiveConnState(%v,%v,%v,err=%v) = %v, want %v",
-					tc.connected, tc.loggedIn, tc.connecting, tc.lastErr, got, tc.want)
+				t.Errorf("LiveConnState(%v,%v,%v,pendingQR=%v,err=%v) = %v, want %v",
+					tc.connected, tc.loggedIn, tc.connecting, tc.pendingQR, tc.lastErr, got, tc.want)
 			}
 		})
 	}

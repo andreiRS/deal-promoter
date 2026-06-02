@@ -3,6 +3,7 @@ module github.com/surdu/deal-promoter/apps/whatsmeow-engine
 go 1.26.3
 
 require (
+	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	go.mau.fi/whatsmeow v0.0.0-20260531220358-9ff5508a26c2
 	golang.org/x/image v0.41.0
 	google.golang.org/protobuf v1.36.11
