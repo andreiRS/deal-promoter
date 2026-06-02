@@ -306,6 +306,98 @@ final class ChannelControllerTest extends WebTestCase
     }
 
     // -------------------------------------------------------------------------
+    // POST /ui/send — preview forwarding
+    // -------------------------------------------------------------------------
+
+    public function testUiSendForwardsPreviewToEngine(): void
+    {
+        $client = self::createClient();
+        $wahaResponse = json_encode(['id' => 'msg-preview-ui'], \JSON_THROW_ON_ERROR);
+        $engineResponse = new MockResponse(
+            $wahaResponse,
+            ['response_headers' => ['Content-Type' => 'application/json']],
+        );
+        $this->mockWahaCapture($engineResponse);
+
+        $client->request(
+            'POST',
+            '/ui/send',
+            [],
+            [],
+            ['CONTENT_TYPE' => 'application/json'],
+            json_encode([
+                'chatId' => 'abc@newsletter',
+                'text' => 'Check this deal!',
+                'preview' => ['url' => 'https://example.com/deal', 'title' => 'Big Deal', 'image' => 'https://example.com/img.jpg'],
+            ], \JSON_THROW_ON_ERROR),
+        );
+
+        self::assertResponseIsSuccessful();
+        $body = json_decode($engineResponse->getRequestOptions()['body'], true, 512, \JSON_THROW_ON_ERROR);
+        self::assertSame('https://example.com/deal', $body['preview']['url']);
+        self::assertSame('Big Deal', $body['preview']['title']);
+        self::assertSame('https://example.com/img.jpg', $body['preview']['image']);
+    }
+
+    public function testUiSendWithoutPreviewStillWorks(): void
+    {
+        $client = self::createClient();
+        $wahaResponse = json_encode(['id' => 'msg-no-preview'], \JSON_THROW_ON_ERROR);
+        $engineResponse = new MockResponse(
+            $wahaResponse,
+            ['response_headers' => ['Content-Type' => 'application/json']],
+        );
+        $this->mockWahaCapture($engineResponse);
+
+        $client->request(
+            'POST',
+            '/ui/send',
+            [],
+            [],
+            ['CONTENT_TYPE' => 'application/json'],
+            json_encode(['chatId' => 'abc@newsletter', 'text' => 'Hello!'], \JSON_THROW_ON_ERROR),
+        );
+
+        self::assertResponseIsSuccessful();
+        $body = json_decode($engineResponse->getRequestOptions()['body'], true, 512, \JSON_THROW_ON_ERROR);
+        self::assertArrayNotHasKey('preview', $body);
+    }
+
+    // -------------------------------------------------------------------------
+    // POST /send — preview forwarding
+    // -------------------------------------------------------------------------
+
+    public function testSendForwardsPreviewToEngine(): void
+    {
+        $client = self::createClient();
+        $wahaResponse = json_encode(['id' => 'msg-preview-machine'], \JSON_THROW_ON_ERROR);
+        $engineResponse = new MockResponse(
+            $wahaResponse,
+            ['response_headers' => ['Content-Type' => 'application/json']],
+        );
+        $this->mockWahaCapture($engineResponse);
+
+        $client->request(
+            'POST',
+            '/send',
+            [],
+            [],
+            ['HTTP_X_INTERNAL_KEY' => 'test-internal-key', 'CONTENT_TYPE' => 'application/json'],
+            json_encode([
+                'chatId' => 'abc@newsletter',
+                'text' => 'Machine send with preview',
+                'preview' => ['url' => 'https://example.com/p', 'title' => 'Product', 'image' => 'https://example.com/p.jpg'],
+            ], \JSON_THROW_ON_ERROR),
+        );
+
+        self::assertResponseIsSuccessful();
+        $body = json_decode($engineResponse->getRequestOptions()['body'], true, 512, \JSON_THROW_ON_ERROR);
+        self::assertSame('https://example.com/p', $body['preview']['url']);
+        self::assertSame('Product', $body['preview']['title']);
+        self::assertSame('https://example.com/p.jpg', $body['preview']['image']);
+    }
+
+    // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
 
@@ -313,7 +405,19 @@ final class ChannelControllerTest extends WebTestCase
     {
         self::getContainer()->set(
             WahaClient::class,
-            new WahaClient(new MockHttpClient($responses), 'http://waha:3000', 'secret', 'default'),
+            new WahaClient(new MockHttpClient($responses), 'http://engine:8080', 'unused-key', 'unused-session'),
+        );
+    }
+
+    /**
+     * Like mockWaha but with a single response that can be inspected after
+     * the request to verify what was sent to the engine.
+     */
+    private function mockWahaCapture(MockResponse $response): void
+    {
+        self::getContainer()->set(
+            WahaClient::class,
+            new WahaClient(new MockHttpClient($response), 'http://engine:8080', 'unused-key', 'unused-session'),
         );
     }
 }

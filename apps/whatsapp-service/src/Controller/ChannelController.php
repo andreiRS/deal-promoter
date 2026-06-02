@@ -44,12 +44,13 @@ final class ChannelController extends AbstractController
     #[Route('/ui/send', name: 'ui_send', methods: ['POST'])]
     public function uiSend(Request $request): JsonResponse
     {
-        /** @var array{chatId?: string, text?: string} $body */
+        /** @var array{chatId?: string, text?: string, preview?: array{url: string, title: string, image: string}} $body */
         $body = json_decode((string) $request->getContent(), true, 512, \JSON_THROW_ON_ERROR);
         $chatId = $body['chatId'] ?? '';
         $text = trim($body['text'] ?? '');
+        $preview = $body['preview'] ?? null;
 
-        return $this->deliver($chatId, $text);
+        return $this->deliver($chatId, $text, $preview);
     }
 
     #[Route('/send', name: 'send', methods: ['POST'])]
@@ -62,28 +63,31 @@ final class ChannelController extends AbstractController
             return new JsonResponse(['error' => 'Unauthorized'], Response::HTTP_UNAUTHORIZED);
         }
 
-        /** @var array{chatId?: string, text?: string} $body */
+        /** @var array{chatId?: string, text?: string, preview?: array{url: string, title: string, image: string}} $body */
         $body = json_decode((string) $request->getContent(), true, 512, \JSON_THROW_ON_ERROR);
         $chatId = $body['chatId'] ?? '';
         $text = trim($body['text'] ?? '');
+        $preview = $body['preview'] ?? null;
 
-        return $this->deliver($chatId, $text);
+        return $this->deliver($chatId, $text, $preview);
     }
 
     /**
-     * Single WAHA delivery path shared by /ui/send and /send.
+     * Single engine delivery path shared by /ui/send and /send.
      *
      * Applies guardSend (400 on failure), then calls WahaClient::sendText (502 on
-     * transport failure). Both routes must go through here — no duplicated WAHA call.
+     * transport failure). Both routes must go through here — no duplicated engine call.
+     *
+     * @param array{url: string, title: string, image: string}|null $preview
      */
-    private function deliver(string $chatId, string $text): JsonResponse
+    private function deliver(string $chatId, string $text, ?array $preview = null): JsonResponse
     {
         $error = $this->guardSend($chatId, $text);
         if (null !== $error) {
             return new JsonResponse(['error' => $error], Response::HTTP_BAD_REQUEST);
         }
 
-        $result = $this->waha->sendText($chatId, $text);
+        $result = $this->waha->sendText($chatId, $text, $preview);
 
         if (!$result['ok']) {
             return new JsonResponse(

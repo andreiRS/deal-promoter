@@ -11,9 +11,9 @@ use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 
 /**
- * Unit tests for the single class that talks to WAHA, driven by a
- * {@see MockHttpClient} so the WAHA HTTP contract is exercised without a live
- * upstream.
+ * Unit tests for the single class that talks to the whatsmeow engine,
+ * driven by a {@see MockHttpClient} so the HTTP contract is exercised
+ * without a live upstream.
  */
 final class WahaClientTest extends TestCase
 {
@@ -55,43 +55,44 @@ final class WahaClientTest extends TestCase
         self::assertSame('UNKNOWN', $client->getSessionStatus());
     }
 
-    public function testGetSessionStatusSendsApiKeyHeaderToPluralSessionsPath(): void
+    public function testGetSessionStatusCallsEngineSessionPathWithNoApiKey(): void
     {
         $response = new MockResponse(
             json_encode(['status' => 'WORKING'], \JSON_THROW_ON_ERROR),
             ['response_headers' => ['Content-Type' => 'application/json']],
         );
         $http = new MockHttpClient($response);
-        $client = new WahaClient($http, 'http://waha:3000', 'secret-key', 'default');
+        $client = new WahaClient($http, 'http://engine:8080', 'unused-key', 'unused-session');
 
         $client->getSessionStatus();
 
-        self::assertSame('http://waha:3000/api/sessions/default', $response->getRequestUrl());
-        self::assertContains('X-Api-Key: secret-key', $response->getRequestOptions()['headers']);
+        self::assertSame('http://engine:8080/session', $response->getRequestUrl());
+        // Engine is keyless — no X-Api-Key header must be sent
+        self::assertNotContains('X-Api-Key: unused-key', $response->getRequestOptions()['headers'] ?? []);
     }
 
-    public function testStartSessionPostsToStartPath(): void
+    public function testStartSessionPostsToEngineStartPath(): void
     {
-        $response = new MockResponse('', ['http_code' => 201]);
+        $response = new MockResponse('', ['http_code' => 200]);
         $http = new MockHttpClient($response);
-        $client = new WahaClient($http, 'http://waha:3000', 'secret-key', 'default');
+        $client = new WahaClient($http, 'http://engine:8080', 'unused-key', 'unused-session');
 
         $client->startSession();
 
         self::assertSame('POST', $response->getRequestMethod());
-        self::assertSame('http://waha:3000/api/sessions/default/start', $response->getRequestUrl());
+        self::assertSame('http://engine:8080/session/start', $response->getRequestUrl());
     }
 
-    public function testStartSessionTreats422AsAlreadyStarted(): void
+    public function testStartSessionSucceedsOn2xx(): void
     {
-        $client = $this->wahaClient(new MockResponse('already started', ['http_code' => 422]));
+        $client = $this->wahaClient(new MockResponse('', ['http_code' => 201]));
 
         $client->startSession();
 
         $this->expectNotToPerformAssertions();
     }
 
-    public function testStartSessionThrowsOnOtherErrors(): void
+    public function testStartSessionThrowsOnNon2xx(): void
     {
         $client = $this->wahaClient(new MockResponse('nope', ['http_code' => 500]));
 
@@ -100,39 +101,36 @@ final class WahaClientTest extends TestCase
         $client->startSession();
     }
 
-    public function testLogoutSessionPostsToLogoutPath(): void
+    public function testLogoutSessionPostsToEngineLogoutPath(): void
     {
         $response = new MockResponse('', ['http_code' => 200]);
         $http = new MockHttpClient($response);
-        $client = new WahaClient($http, 'http://waha:3000', 'secret-key', 'default');
+        $client = new WahaClient($http, 'http://engine:8080', 'unused-key', 'unused-session');
 
         $client->logoutSession();
 
         self::assertSame('POST', $response->getRequestMethod());
-        self::assertSame('http://waha:3000/api/sessions/default/logout', $response->getRequestUrl());
+        self::assertSame('http://engine:8080/session/logout', $response->getRequestUrl());
     }
 
-    public function testGetQrImageReturnsBytesAndContentTypeFromSingularPath(): void
+    public function testGetQrImageReturnsBytesAndContentTypeFrom2xx(): void
     {
         $response = new MockResponse(
             'PNGBYTES',
             ['response_headers' => ['Content-Type' => 'image/png']],
         );
         $http = new MockHttpClient($response);
-        $client = new WahaClient($http, 'http://waha:3000', 'secret-key', 'default');
+        $client = new WahaClient($http, 'http://engine:8080', 'unused-key', 'unused-session');
 
         $qr = $client->getQrImage();
 
         self::assertTrue($qr->ok);
         self::assertSame('PNGBYTES', $qr->body);
         self::assertSame('image/png', $qr->contentType);
-        self::assertSame(
-            'http://waha:3000/api/default/auth/qr?format=image',
-            $response->getRequestUrl(),
-        );
+        self::assertSame('http://engine:8080/qr', $response->getRequestUrl());
     }
 
-    public function testGetQrImageSignalsUnavailabilityWithUpstreamStatus(): void
+    public function testGetQrImageSignalsUnavailabilityOnNon2xx(): void
     {
         $client = $this->wahaClient(new MockResponse('no qr', ['http_code' => 404]));
 
@@ -168,19 +166,20 @@ final class WahaClientTest extends TestCase
         self::assertSame('ADMIN', $channels[1]['role']);
     }
 
-    public function testListOwnedChannelsHitsTheSingularSessionPath(): void
+    public function testListOwnedChannelsCallsEngineChannelsPath(): void
     {
         $response = new MockResponse(
             json_encode([], \JSON_THROW_ON_ERROR),
             ['response_headers' => ['Content-Type' => 'application/json']],
         );
         $http = new MockHttpClient($response);
-        $client = new WahaClient($http, 'http://waha:3000', 'secret-key', 'default');
+        $client = new WahaClient($http, 'http://engine:8080', 'unused-key', 'unused-session');
 
         $client->listOwnedChannels();
 
-        self::assertSame('http://waha:3000/api/default/channels', $response->getRequestUrl());
-        self::assertContains('X-Api-Key: secret-key', $response->getRequestOptions()['headers']);
+        self::assertSame('http://engine:8080/channels', $response->getRequestUrl());
+        // Engine is keyless — no X-Api-Key header
+        self::assertNotContains('X-Api-Key: unused-key', $response->getRequestOptions()['headers'] ?? []);
     }
 
     public function testListOwnedChannelsThrowsOnNonOkResponse(): void
@@ -196,7 +195,7 @@ final class WahaClientTest extends TestCase
     // sendText
     // -------------------------------------------------------------------------
 
-    public function testSendTextPostsToSendTextEndpointWithChatIdAndText(): void
+    public function testSendTextPostsToSendEndpointWithChatIdAndText(): void
     {
         $responsePayload = json_encode(['id' => 'msg-1'], \JSON_THROW_ON_ERROR);
         $response = new MockResponse(
@@ -204,20 +203,63 @@ final class WahaClientTest extends TestCase
             ['response_headers' => ['Content-Type' => 'application/json']],
         );
         $http = new MockHttpClient($response);
-        $client = new WahaClient($http, 'http://waha:3000', 'secret-key', 'default');
+        $client = new WahaClient($http, 'http://engine:8080', 'unused-key', 'unused-session');
 
         $result = $client->sendText('abc@newsletter', 'Hello!');
 
         self::assertSame('POST', $response->getRequestMethod());
-        self::assertSame('http://waha:3000/api/sendText', $response->getRequestUrl());
+        self::assertSame('http://engine:8080/send', $response->getRequestUrl());
 
         $body = json_decode($response->getRequestOptions()['body'], true, 512, \JSON_THROW_ON_ERROR);
-        self::assertSame('default', $body['session']);
         self::assertSame('abc@newsletter', $body['chatId']);
         self::assertSame('Hello!', $body['text']);
+        // No session field in the new engine contract
+        self::assertArrayNotHasKey('session', $body);
 
         self::assertTrue($result['ok']);
         self::assertSame(200, $result['status']);
+    }
+
+    public function testSendTextWithPreviewPostsPreviewBlock(): void
+    {
+        $responsePayload = json_encode(['id' => 'msg-2'], \JSON_THROW_ON_ERROR);
+        $response = new MockResponse(
+            $responsePayload,
+            ['response_headers' => ['Content-Type' => 'application/json']],
+        );
+        $http = new MockHttpClient($response);
+        $client = new WahaClient($http, 'http://engine:8080', 'unused-key', 'unused-session');
+
+        $preview = ['url' => 'https://example.com/deal', 'title' => 'Great Deal', 'image' => 'https://example.com/img.jpg'];
+        $result = $client->sendText('abc@newsletter', 'Check this!', $preview);
+
+        self::assertSame('POST', $response->getRequestMethod());
+        self::assertSame('http://engine:8080/send', $response->getRequestUrl());
+
+        $body = json_decode($response->getRequestOptions()['body'], true, 512, \JSON_THROW_ON_ERROR);
+        self::assertSame('abc@newsletter', $body['chatId']);
+        self::assertSame('Check this!', $body['text']);
+        self::assertSame('https://example.com/deal', $body['preview']['url']);
+        self::assertSame('Great Deal', $body['preview']['title']);
+        self::assertSame('https://example.com/img.jpg', $body['preview']['image']);
+
+        self::assertTrue($result['ok']);
+    }
+
+    public function testSendTextWithoutPreviewDoesNotSendPreviewKey(): void
+    {
+        $responsePayload = json_encode(['id' => 'msg-3'], \JSON_THROW_ON_ERROR);
+        $response = new MockResponse(
+            $responsePayload,
+            ['response_headers' => ['Content-Type' => 'application/json']],
+        );
+        $http = new MockHttpClient($response);
+        $client = new WahaClient($http, 'http://engine:8080', 'unused-key', 'unused-session');
+
+        $client->sendText('abc@newsletter', 'No preview');
+
+        $body = json_decode($response->getRequestOptions()['body'], true, 512, \JSON_THROW_ON_ERROR);
+        self::assertArrayNotHasKey('preview', $body);
     }
 
     public function testSendTextReturnsNotOkOnUpstreamError(): void
@@ -234,9 +276,9 @@ final class WahaClientTest extends TestCase
     {
         return new WahaClient(
             new MockHttpClient($response),
-            'http://waha:3000',
-            'secret-key',
-            'default',
+            'http://engine:8080',
+            'unused-key',
+            'unused-session',
         );
     }
 }

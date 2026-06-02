@@ -8,32 +8,32 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
 use Symfony\Contracts\HttpClient\ResponseInterface;
 
 /**
- * The single class that talks to WAHA and the only holder of the WAHA
- * `X-Api-Key` (ADR 0002). The key must never reach a browser: it is set as a
- * request header here and nowhere else.
+ * The single class that talks to the whatsmeow engine.
  *
- * Ports the validated prototype's `src/lib/waha.ts`, preserving WAHA's
- * inconsistent path shapes (plural `/api/sessions/...` for lifecycle, singular
- * `/api/{session}/...` for QR).
+ * The engine is keyless and exposes clean paths with no /api prefix and no
+ * {session} segment. The $apiKey and $session constructor args are accepted for
+ * backward-compatible wiring (removed in the compose cutover slice) but are not
+ * used by any request.
  */
 final class WahaClient
 {
     public function __construct(
         private readonly HttpClientInterface $http,
         private readonly string $baseUrl,
+        /** @phpstan-ignore property.onlyWritten (removed in slice 9 compose cutover) */
         private readonly string $apiKey,
+        /** @phpstan-ignore property.onlyWritten (removed in slice 9 compose cutover) */
         private readonly string $session,
     ) {
     }
 
     /**
-     * GET /api/sessions/{session}. 404 means the session was never created
-     * (STOPPED); any other non-ok response is reported as UNKNOWN; otherwise
-     * the upstream `status` field is returned (falling back to UNKNOWN).
+     * GET /session. 404 means no session yet (STOPPED); other non-2xx → UNKNOWN;
+     * 2xx → parse {status} from the response body.
      */
     public function getSessionStatus(): string
     {
-        $response = $this->request('GET', "/api/sessions/{$this->session}");
+        $response = $this->request('GET', '/session');
         $status = $response->getStatusCode();
 
         if (404 === $status) {
@@ -50,45 +50,40 @@ final class WahaClient
     }
 
     /**
-     * POST /api/sessions/{session}/start. WAHA replies 422 when the session is
-     * already started, which the prototype treats as success; any other non-ok
-     * status is a real failure.
+     * POST /session/start. 2xx → success; non-2xx → WahaException.
      */
     public function startSession(): void
     {
-        $response = $this->request('POST', "/api/sessions/{$this->session}/start");
+        $response = $this->request('POST', '/session/start');
         $status = $response->getStatusCode();
 
-        if (($status < 200 || $status >= 300) && 422 !== $status) {
-            throw new WahaException("WAHA start failed: {$status}");
+        if ($status < 200 || $status >= 300) {
+            throw new WahaException("Engine start failed: {$status}");
         }
     }
 
     /**
-     * POST /api/sessions/{session}/logout. Fire-and-forget: the prototype
-     * ignores the outcome, so we only force the request to flush and swallow
-     * the result.
+     * POST /session/logout. Fire-and-forget: only flushes the response.
      */
     public function logoutSession(): void
     {
-        $this->request('POST', "/api/sessions/{$this->session}/logout")->getStatusCode();
+        $this->request('POST', '/session/logout')->getStatusCode();
     }
 
     /**
-     * GET /api/{session}/channels (SINGULAR path, matching the QR endpoint). Filters
-     * the list to channels whose id ends with `@newsletter` AND whose role is OWNER
-     * or ADMIN (i.e. the account can post to it). Mirrors `listOwnedChannels` in
-     * the prototype's `waha.ts`. Throws on a non-ok upstream response.
+     * GET /channels. Filters to @newsletter channels with OWNER/ADMIN role as a
+     * defense-in-depth guard (the engine already pre-filters; the PHP filter is
+     * harmless and keeps the existing unit test assertion intact).
      *
      * @return list<array{id: string, name: string, role: string}>
      */
     public function listOwnedChannels(): array
     {
-        $response = $this->request('GET', "/api/{$this->session}/channels");
+        $response = $this->request('GET', '/channels');
         $status = $response->getStatusCode();
 
         if ($status < 200 || $status >= 300) {
-            throw new WahaException("WAHA channels failed: {$status}");
+            throw new WahaException("Engine channels failed: {$status}");
         }
 
         /** @var list<array{id: string, name: string, role: string}> $raw */
@@ -102,19 +97,22 @@ final class WahaClient
     }
 
     /**
-     * POST /api/sendText. Sends `text` to `chatId` using the configured session.
-     * Returns a result array mirroring the prototype's `{ ok, status, data }` shape
-     * so the caller can relay the outcome without knowing WAHA's response schema.
+     * POST /send. Sends {chatId, text} — and optionally {preview:{url,title,image}}
+     * — to the engine. Returns {ok, status, data} matching the existing caller shape.
+     *
+     * @param array{url: string, title: string, image: string}|null $preview
      *
      * @return array{ok: bool, status: int, data: mixed}
      */
-    public function sendText(string $chatId, string $text): array
+    public function sendText(string $chatId, string $text, ?array $preview = null): array
     {
-        $response = $this->request('POST', '/api/sendText', [
-            'session' => $this->session,
-            'chatId' => $chatId,
-            'text' => $text,
-        ]);
+        $body = ['chatId' => $chatId, 'text' => $text];
+
+        if (null !== $preview) {
+            $body['preview'] = $preview;
+        }
+
+        $response = $this->request('POST', '/send', $body);
         $status = $response->getStatusCode();
         $ok = $status >= 200 && $status < 300;
 
@@ -128,14 +126,12 @@ final class WahaClient
     }
 
     /**
-     * GET /api/{session}/auth/qr?format=image. Note the SINGULAR `/api/{session}`
-     * shape (WAHA is inconsistent vs. the plural lifecycle paths). Returns the
-     * raw image bytes and content type for the controller to stream; on a non-ok
-     * response it surfaces the upstream status so the caller can relay it.
+     * GET /qr. 2xx → QrImage::available(bytes, contentType); any non-2xx (incl.
+     * 404 when no QR is available) → QrImage::unavailable(status).
      */
     public function getQrImage(): QrImage
     {
-        $response = $this->request('GET', "/api/{$this->session}/auth/qr?format=image");
+        $response = $this->request('GET', '/qr');
         $status = $response->getStatusCode();
 
         if ($status < 200 || $status >= 300) {
@@ -149,13 +145,11 @@ final class WahaClient
     }
 
     /**
-     * @param array<string, mixed>|null $json JSON-encodable body; when provided,
-     *                                        Content-Type: application/json is set automatically
+     * @param array<string, mixed>|null $json JSON body; sets Content-Type automatically
      */
     private function request(string $method, string $path, ?array $json = null): ResponseInterface
     {
-        // The X-Api-Key is attached here and only here (ADR 0002).
-        $options = ['headers' => ['X-Api-Key' => $this->apiKey]];
+        $options = [];
 
         if (null !== $json) {
             $options['json'] = $json;

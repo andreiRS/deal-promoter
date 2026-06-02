@@ -10,9 +10,9 @@ use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 
 /**
- * Functional tests for the open pairing routes, driving WAHA through a
- * {@see MockHttpClient} swapped into the container so the real upstream is never
- * contacted.
+ * Functional tests for the open pairing routes, driving the whatsmeow engine
+ * through a {@see MockHttpClient} swapped into the container so the real upstream
+ * is never contacted.
  */
 final class SessionControllerTest extends WebTestCase
 {
@@ -60,18 +60,19 @@ final class SessionControllerTest extends WebTestCase
         );
     }
 
-    public function testStartTolerates422FromWaha(): void
+    public function testStartReturns502OnNon2xx(): void
     {
         $client = self::createClient();
+        // The engine returns non-2xx (e.g. 422) when it cannot start; the gateway
+        // must surface a 502 (the old WAHA 422-tolerance is removed for the new engine).
         $this->mockWaha(new MockResponse('already started', ['http_code' => 422]));
 
         $client->request('POST', '/session/start');
 
-        self::assertResponseIsSuccessful();
-        self::assertJsonStringEqualsJsonString(
-            json_encode(['ok' => true], \JSON_THROW_ON_ERROR),
-            (string) $client->getResponse()->getContent(),
-        );
+        self::assertResponseStatusCodeSame(502);
+        $data = json_decode((string) $client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
+        self::assertFalse($data['ok']);
+        self::assertArrayHasKey('error', $data);
     }
 
     public function testStartReturns502OnWahaError(): void
