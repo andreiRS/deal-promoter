@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Controller;
 
-use App\Waha\WahaClient;
+use App\WhatsApp\WhatsAppClient;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
@@ -19,7 +19,7 @@ final class SessionControllerTest extends WebTestCase
     public function testSessionReturnsStatusJson(): void
     {
         $client = self::createClient();
-        $this->mockWaha(new MockResponse(
+        $this->mockEngine(new MockResponse(
             json_encode(['status' => 'SCAN_QR_CODE'], \JSON_THROW_ON_ERROR),
             ['response_headers' => ['Content-Type' => 'application/json']],
         ));
@@ -36,7 +36,7 @@ final class SessionControllerTest extends WebTestCase
     public function testSessionReturns502OnTransportFailure(): void
     {
         $client = self::createClient();
-        $this->mockWaha(new MockResponse('', ['error' => 'Connection refused']));
+        $this->mockEngine(new MockResponse('', ['error' => 'Connection refused']));
 
         $client->request('GET', '/session');
 
@@ -49,7 +49,7 @@ final class SessionControllerTest extends WebTestCase
     public function testStartReturnsOkJson(): void
     {
         $client = self::createClient();
-        $this->mockWaha(new MockResponse('', ['http_code' => 201]));
+        $this->mockEngine(new MockResponse('', ['http_code' => 201]));
 
         $client->request('POST', '/session/start');
 
@@ -64,8 +64,8 @@ final class SessionControllerTest extends WebTestCase
     {
         $client = self::createClient();
         // The engine returns non-2xx (e.g. 422) when it cannot start; the gateway
-        // must surface a 502 (the old WAHA 422-tolerance is removed for the new engine).
-        $this->mockWaha(new MockResponse('already started', ['http_code' => 422]));
+        // must surface a 502 (the old 422-tolerance is removed for the new engine).
+        $this->mockEngine(new MockResponse('already started', ['http_code' => 422]));
 
         $client->request('POST', '/session/start');
 
@@ -75,10 +75,10 @@ final class SessionControllerTest extends WebTestCase
         self::assertArrayHasKey('error', $data);
     }
 
-    public function testStartReturns502OnWahaError(): void
+    public function testStartReturns502OnEngineError(): void
     {
         $client = self::createClient();
-        $this->mockWaha(new MockResponse('nope', ['http_code' => 500]));
+        $this->mockEngine(new MockResponse('nope', ['http_code' => 500]));
 
         $client->request('POST', '/session/start');
 
@@ -91,7 +91,7 @@ final class SessionControllerTest extends WebTestCase
     public function testLogoutReturnsOkJson(): void
     {
         $client = self::createClient();
-        $this->mockWaha(new MockResponse('', ['http_code' => 200]));
+        $this->mockEngine(new MockResponse('', ['http_code' => 200]));
 
         $client->request('POST', '/session/logout');
 
@@ -105,7 +105,7 @@ final class SessionControllerTest extends WebTestCase
     public function testQrStreamsImageWithNoStore(): void
     {
         $client = self::createClient();
-        $this->mockWaha(new MockResponse(
+        $this->mockEngine(new MockResponse(
             'PNGBYTES',
             ['response_headers' => ['Content-Type' => 'image/png']],
         ));
@@ -122,18 +122,18 @@ final class SessionControllerTest extends WebTestCase
     public function testQrReturnsUpstreamStatusWhenUnavailable(): void
     {
         $client = self::createClient();
-        $this->mockWaha(new MockResponse('no qr', ['http_code' => 404]));
+        $this->mockEngine(new MockResponse('no qr', ['http_code' => 404]));
 
         $client->request('GET', '/session/qr');
 
         self::assertResponseStatusCodeSame(404);
     }
 
-    private function mockWaha(MockResponse ...$responses): void
+    private function mockEngine(MockResponse ...$responses): void
     {
         self::getContainer()->set(
-            WahaClient::class,
-            new WahaClient(new MockHttpClient($responses), 'http://waha:3000'),
+            WhatsAppClient::class,
+            new WhatsAppClient(new MockHttpClient($responses), 'http://engine:8080'),
         );
     }
 }

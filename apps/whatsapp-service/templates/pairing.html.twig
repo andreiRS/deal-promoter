@@ -135,7 +135,7 @@
             <button id="connect" class="btn-primary" hidden>Connect WhatsApp</button>
 
             <div id="starting" class="row muted" hidden>
-                <span>Starting WAHA session…</span>
+                <span>Starting WhatsApp session…</span>
             </div>
 
             <div id="scan" class="stack" hidden>
@@ -187,8 +187,8 @@
 
     <script>
         (function () {
-            // The WAHA X-Api-Key is NEVER present here: this page only ever calls
-            // the open, same-origin /session* routes, which proxy WAHA server-side.
+            // No channel credentials are EVER present here: this page only ever calls
+            // the open, same-origin /session* routes, which proxy the engine server-side.
             const els = {
                 connect: document.getElementById('connect'),
                 starting: document.getElementById('starting'),

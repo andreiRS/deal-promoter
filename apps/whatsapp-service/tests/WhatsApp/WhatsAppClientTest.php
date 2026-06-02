@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace App\Tests\Waha;
+namespace App\Tests\WhatsApp;
 
-use App\Waha\WahaClient;
-use App\Waha\WahaException;
+use App\WhatsApp\WhatsAppClient;
+use App\WhatsApp\WhatsAppException;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
@@ -15,18 +15,18 @@ use Symfony\Component\HttpClient\Response\MockResponse;
  * driven by a {@see MockHttpClient} so the HTTP contract is exercised
  * without a live upstream.
  */
-final class WahaClientTest extends TestCase
+final class WhatsAppClientTest extends TestCase
 {
     public function testGetSessionStatusReturnsStoppedOn404(): void
     {
-        $client = $this->wahaClient(new MockResponse('', ['http_code' => 404]));
+        $client = $this->whatsAppClient(new MockResponse('', ['http_code' => 404]));
 
         self::assertSame('STOPPED', $client->getSessionStatus());
     }
 
     public function testGetSessionStatusReturnsUpstreamStatusField(): void
     {
-        $client = $this->wahaClient(
+        $client = $this->whatsAppClient(
             new MockResponse(
                 json_encode(['status' => 'SCAN_QR_CODE'], \JSON_THROW_ON_ERROR),
                 ['response_headers' => ['Content-Type' => 'application/json']],
@@ -38,7 +38,7 @@ final class WahaClientTest extends TestCase
 
     public function testGetSessionStatusReturnsWorking(): void
     {
-        $client = $this->wahaClient(
+        $client = $this->whatsAppClient(
             new MockResponse(
                 json_encode(['status' => 'WORKING'], \JSON_THROW_ON_ERROR),
                 ['response_headers' => ['Content-Type' => 'application/json']],
@@ -50,7 +50,7 @@ final class WahaClientTest extends TestCase
 
     public function testGetSessionStatusReturnsUnknownOnServerError(): void
     {
-        $client = $this->wahaClient(new MockResponse('boom', ['http_code' => 500]));
+        $client = $this->whatsAppClient(new MockResponse('boom', ['http_code' => 500]));
 
         self::assertSame('UNKNOWN', $client->getSessionStatus());
     }
@@ -62,7 +62,7 @@ final class WahaClientTest extends TestCase
             ['response_headers' => ['Content-Type' => 'application/json']],
         );
         $http = new MockHttpClient($response);
-        $client = new WahaClient($http, 'http://engine:8080');
+        $client = new WhatsAppClient($http, 'http://engine:8080');
 
         $client->getSessionStatus();
 
@@ -76,7 +76,7 @@ final class WahaClientTest extends TestCase
     {
         $response = new MockResponse('', ['http_code' => 200]);
         $http = new MockHttpClient($response);
-        $client = new WahaClient($http, 'http://engine:8080');
+        $client = new WhatsAppClient($http, 'http://engine:8080');
 
         $client->startSession();
 
@@ -86,7 +86,7 @@ final class WahaClientTest extends TestCase
 
     public function testStartSessionSucceedsOn2xx(): void
     {
-        $client = $this->wahaClient(new MockResponse('', ['http_code' => 201]));
+        $client = $this->whatsAppClient(new MockResponse('', ['http_code' => 201]));
 
         $client->startSession();
 
@@ -95,9 +95,9 @@ final class WahaClientTest extends TestCase
 
     public function testStartSessionThrowsOnNon2xx(): void
     {
-        $client = $this->wahaClient(new MockResponse('nope', ['http_code' => 500]));
+        $client = $this->whatsAppClient(new MockResponse('nope', ['http_code' => 500]));
 
-        $this->expectException(WahaException::class);
+        $this->expectException(WhatsAppException::class);
 
         $client->startSession();
     }
@@ -106,7 +106,7 @@ final class WahaClientTest extends TestCase
     {
         $response = new MockResponse('', ['http_code' => 200]);
         $http = new MockHttpClient($response);
-        $client = new WahaClient($http, 'http://engine:8080');
+        $client = new WhatsAppClient($http, 'http://engine:8080');
 
         $client->logoutSession();
 
@@ -121,7 +121,7 @@ final class WahaClientTest extends TestCase
             ['response_headers' => ['Content-Type' => 'image/png']],
         );
         $http = new MockHttpClient($response);
-        $client = new WahaClient($http, 'http://engine:8080');
+        $client = new WhatsAppClient($http, 'http://engine:8080');
 
         $qr = $client->getQrImage();
 
@@ -133,7 +133,7 @@ final class WahaClientTest extends TestCase
 
     public function testGetQrImageSignalsUnavailabilityOnNon2xx(): void
     {
-        $client = $this->wahaClient(new MockResponse('no qr', ['http_code' => 404]));
+        $client = $this->whatsAppClient(new MockResponse('no qr', ['http_code' => 404]));
 
         $qr = $client->getQrImage();
 
@@ -154,7 +154,7 @@ final class WahaClientTest extends TestCase
             ['id' => 'jkl@g.us',       'name' => 'A Group',    'role' => 'OWNER'],
         ], \JSON_THROW_ON_ERROR);
 
-        $client = $this->wahaClient(
+        $client = $this->whatsAppClient(
             new MockResponse($payload, ['response_headers' => ['Content-Type' => 'application/json']]),
         );
 
@@ -174,7 +174,7 @@ final class WahaClientTest extends TestCase
             ['response_headers' => ['Content-Type' => 'application/json']],
         );
         $http = new MockHttpClient($response);
-        $client = new WahaClient($http, 'http://engine:8080');
+        $client = new WhatsAppClient($http, 'http://engine:8080');
 
         $client->listOwnedChannels();
 
@@ -185,9 +185,9 @@ final class WahaClientTest extends TestCase
 
     public function testListOwnedChannelsThrowsOnNonOkResponse(): void
     {
-        $client = $this->wahaClient(new MockResponse('forbidden', ['http_code' => 403]));
+        $client = $this->whatsAppClient(new MockResponse('forbidden', ['http_code' => 403]));
 
-        $this->expectException(WahaException::class);
+        $this->expectException(WhatsAppException::class);
 
         $client->listOwnedChannels();
     }
@@ -204,7 +204,7 @@ final class WahaClientTest extends TestCase
             ['response_headers' => ['Content-Type' => 'application/json']],
         );
         $http = new MockHttpClient($response);
-        $client = new WahaClient($http, 'http://engine:8080');
+        $client = new WhatsAppClient($http, 'http://engine:8080');
 
         $result = $client->sendText('abc@newsletter', 'Hello!');
 
@@ -229,7 +229,7 @@ final class WahaClientTest extends TestCase
             ['response_headers' => ['Content-Type' => 'application/json']],
         );
         $http = new MockHttpClient($response);
-        $client = new WahaClient($http, 'http://engine:8080');
+        $client = new WhatsAppClient($http, 'http://engine:8080');
 
         $preview = ['url' => 'https://example.com/deal', 'title' => 'Great Deal', 'image' => 'https://example.com/img.jpg'];
         $result = $client->sendText('abc@newsletter', 'Check this!', $preview);
@@ -255,7 +255,7 @@ final class WahaClientTest extends TestCase
             ['response_headers' => ['Content-Type' => 'application/json']],
         );
         $http = new MockHttpClient($response);
-        $client = new WahaClient($http, 'http://engine:8080');
+        $client = new WhatsAppClient($http, 'http://engine:8080');
 
         $client->sendText('abc@newsletter', 'No preview');
 
@@ -265,7 +265,7 @@ final class WahaClientTest extends TestCase
 
     public function testSendTextReturnsNotOkOnUpstreamError(): void
     {
-        $client = $this->wahaClient(new MockResponse('bad', ['http_code' => 500]));
+        $client = $this->whatsAppClient(new MockResponse('bad', ['http_code' => 500]));
 
         $result = $client->sendText('abc@newsletter', 'Hi');
 
@@ -273,9 +273,9 @@ final class WahaClientTest extends TestCase
         self::assertSame(500, $result['status']);
     }
 
-    private function wahaClient(MockResponse $response): WahaClient
+    private function whatsAppClient(MockResponse $response): WhatsAppClient
     {
-        return new WahaClient(
+        return new WhatsAppClient(
             new MockHttpClient($response),
             'http://engine:8080',
         );

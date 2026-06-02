@@ -1,6 +1,6 @@
 {
     "name": "deal-promoter/whatsapp-service",
-    "description": "Standalone WhatsApp gateway: the only component that talks to WAHA.",
+    "description": "Standalone WhatsApp gateway: the only component that talks to the whatsmeow engine.",
     "type": "project",
     "license": "proprietary",
     "minimum-stability": "stable",

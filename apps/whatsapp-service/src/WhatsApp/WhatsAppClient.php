@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Waha;
+namespace App\WhatsApp;
 
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 use Symfony\Contracts\HttpClient\ResponseInterface;
@@ -13,7 +13,7 @@ use Symfony\Contracts\HttpClient\ResponseInterface;
  * The engine is keyless and exposes clean paths with no /api prefix and no
  * {session} segment, so it needs only a base URL.
  */
-final class WahaClient
+final class WhatsAppClient
 {
     public function __construct(
         private readonly HttpClientInterface $http,
@@ -44,7 +44,7 @@ final class WahaClient
     }
 
     /**
-     * POST /session/start. 2xx → success; non-2xx → WahaException.
+     * POST /session/start. 2xx → success; non-2xx → WhatsAppException.
      */
     public function startSession(): void
     {
@@ -52,7 +52,7 @@ final class WahaClient
         $status = $response->getStatusCode();
 
         if ($status < 200 || $status >= 300) {
-            throw new WahaException("Engine start failed: {$status}");
+            throw new WhatsAppException("Engine start failed: {$status}");
         }
     }
 
@@ -77,7 +77,7 @@ final class WahaClient
         $status = $response->getStatusCode();
 
         if ($status < 200 || $status >= 300) {
-            throw new WahaException("Engine channels failed: {$status}");
+            throw new WhatsAppException("Engine channels failed: {$status}");
         }
 
         /** @var list<array{id: string, name: string, role: string}> $raw */

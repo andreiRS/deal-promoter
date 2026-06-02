@@ -81,7 +81,7 @@ services:
     ports:
       - "8001:8000"                     # distinct from the pipeline's 8000
     environment:
-      WAHA_URL: http://whatsmeow-engine:8080
+      ENGINE_URL: http://whatsmeow-engine:8080
       WHATSAPP_INTERNAL_KEY: ${WHATSAPP_INTERNAL_KEY}
     depends_on:
       whatsmeow-engine:

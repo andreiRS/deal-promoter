@@ -1,7 +1,7 @@
 parameters:
     # whatsmeow-engine base URL, injected by docker-compose. Default mirrors the
     # compose service so the app boots (and tests run) without the env present.
-    env(WAHA_URL): 'http://whatsmeow-engine:8080'
+    env(ENGINE_URL): 'http://whatsmeow-engine:8080'
     # Gateway-level trust gate (ADR 0002). Empty default → every request is 401
     # (fail-closed: a misconfigured gateway never accepts unauthenticated sends).
     env(WHATSAPP_INTERNAL_KEY): ''
@@ -17,15 +17,15 @@ services:
             - '../src/Kernel.php'
 
     # The single component that talks to the engine (ADR 0002). Public so
-    # functional tests can swap in a WahaClient backed by MockHttpClient; the
+    # functional tests can swap in a WhatsAppClient backed by MockHttpClient; the
     # engine is keyless and only reachable in-process over the compose network.
-    App\Waha\WahaClient:
+    App\WhatsApp\WhatsAppClient:
         public: true
         arguments:
-            $baseUrl: '%env(WAHA_URL)%'
+            $baseUrl: '%env(ENGINE_URL)%'
 
-    # Explicit def so $internalKey can be injected alongside the autowired $waha.
+    # Explicit def so $internalKey can be injected alongside the autowired $engine.
     App\Controller\ChannelController:
         arguments:
-            $waha: '@App\Waha\WahaClient'
+            $engine: '@App\WhatsApp\WhatsAppClient'
             $internalKey: '%env(WHATSAPP_INTERNAL_KEY)%'
