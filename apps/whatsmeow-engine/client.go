@@ -257,7 +257,6 @@ func (e *RealEngine) Logout() error {
 	return err
 }
 
-func (e *RealEngine) Channels() ([]Channel, error) { return nil, errNotImplemented }
 func (e *RealEngine) Send(req SendRequest) (string, error) {
 	return "", errNotImplemented
 }
