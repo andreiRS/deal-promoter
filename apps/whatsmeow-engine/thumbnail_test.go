@@ -120,6 +120,54 @@ func TestTransformThumbnail_InvalidBytes_ReturnsError(t *testing.T) {
 	}
 }
 
+// --- High-res transform: resizes to 800px longest side, returns actual dims ---
+
+func TestTransformHighResThumbnail_ResizesLongestSideTo800(t *testing.T) {
+	// 1200x600 JPEG — longest side 1200 -> 800; short side -> 400.
+	src := makeJPEG(t, 1200, 600)
+	got, w, h, err := TransformHighResThumbnail(bytes.NewReader(src))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if w != 800 {
+		t.Errorf("returned width = %d, want 800", w)
+	}
+	if h != 400 {
+		t.Errorf("returned height = %d, want 400 (aspect preserved)", h)
+	}
+	img, _, err := image.Decode(bytes.NewReader(got))
+	if err != nil {
+		t.Fatalf("output is not a valid image: %v", err)
+	}
+	b := img.Bounds()
+	if b.Max.X != 800 || b.Max.Y != 400 {
+		t.Errorf("decoded image = %dx%d, want 800x400", b.Max.X, b.Max.Y)
+	}
+}
+
+func TestTransformHighResThumbnail_SquareSource_SquareResult(t *testing.T) {
+	// Amazon images are square -> a square large card.
+	src := makeJPEG(t, 1000, 1000)
+	_, w, h, err := TransformHighResThumbnail(bytes.NewReader(src))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if w != 800 || h != 800 {
+		t.Errorf("square source produced %dx%d, want 800x800", w, h)
+	}
+}
+
+func TestTransformHighResThumbnail_AlreadySmall_NotUpscaled(t *testing.T) {
+	src := makeJPEG(t, 300, 150)
+	_, w, h, err := TransformHighResThumbnail(bytes.NewReader(src))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if w != 300 || h != 150 {
+		t.Errorf("small source produced %dx%d, want 300x150 (no upscale)", w, h)
+	}
+}
+
 // --- Behavior 2: FetchThumbnail sends browser-like User-Agent ---
 
 func TestFetchThumbnail_SendsBrowserUserAgent(t *testing.T) {

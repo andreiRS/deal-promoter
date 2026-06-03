@@ -83,6 +83,58 @@ func TestBuildExtendedTextMessage_NilThumbnail_JPEGThumbnailOmitted(t *testing.T
 	}
 }
 
+func TestBuildHighResExtendedTextMessage_MapsUploadAndKeepsInlineFallback(t *testing.T) {
+	inline := []byte{0xFF, 0xD8, 0x99}
+	preview := engine.PreviewMeta{
+		URL:   "https://example.com/product",
+		Title: "Great Product",
+		Image: "https://example.com/img.jpg",
+	}
+	hr := engine.HighResThumbnail{
+		DirectPath: "/v/t62.1234/high-res-thumb",
+		SHA256:     []byte{0x01, 0x02, 0x03},
+		Width:      800,
+		Height:     800,
+	}
+
+	msg := engine.BuildHighResExtendedTextMessage("Deal text", preview, inline, hr)
+
+	ext := msg.GetExtendedTextMessage()
+	if ext == nil {
+		t.Fatal("ExtendedTextMessage is nil")
+	}
+	if got := ext.GetThumbnailDirectPath(); got != hr.DirectPath {
+		t.Errorf("ThumbnailDirectPath = %q, want %q", got, hr.DirectPath)
+	}
+	if !bytes.Equal(ext.GetThumbnailSHA256(), hr.SHA256) {
+		t.Errorf("ThumbnailSHA256 = %v, want %v", ext.GetThumbnailSHA256(), hr.SHA256)
+	}
+	if got := ext.GetThumbnailWidth(); got != 800 {
+		t.Errorf("ThumbnailWidth = %d, want 800", got)
+	}
+	if got := ext.GetThumbnailHeight(); got != 800 {
+		t.Errorf("ThumbnailHeight = %d, want 800", got)
+	}
+	// Inline thumbnail is kept as the fallback.
+	if !bytes.Equal(ext.GetJPEGThumbnail(), inline) {
+		t.Errorf("JPEGThumbnail = %v, want inline fallback %v", ext.GetJPEGThumbnail(), inline)
+	}
+	// PreviewType stays IMAGE (verification risk tracked in slice 4).
+	if got := ext.GetPreviewType(); got != waE2E.ExtendedTextMessage_IMAGE {
+		t.Errorf("PreviewType = %v, want IMAGE", got)
+	}
+	// The base preview fields are still set.
+	if got := ext.GetText(); got != "Deal text" {
+		t.Errorf("Text = %q, want %q", got, "Deal text")
+	}
+	if got := ext.GetTitle(); got != "Great Product" {
+		t.Errorf("Title = %q, want %q", got, "Great Product")
+	}
+	if got := ext.GetMatchedText(); got != preview.URL {
+		t.Errorf("MatchedText = %q, want %q", got, preview.URL)
+	}
+}
+
 // ---------- newsletter JID parsing ----------
 
 func TestParseNewsletterJID(t *testing.T) {
