@@ -113,6 +113,15 @@ cursor is stored.
 
 The umbrella for all free, no-API-call filtering of raw [Candidates](#candidate) before a [Live Snapshot](#live-snapshot). Two halves: [Criteria](#criteria) (what we want) and [Outlier Guards](#outlier-guards) (what is fake). A candidate that clears both, and the [Already-Posted Guard](#already-posted-guard), becomes a surviving candidate — still untrusted on price until the Live Snapshot.
 
+## Preview Thumbnail
+
+The product image shown on a [Channel](#channel) link-preview card, built by the [whatsmeow Engine](#whatsmeow-engine) from the deal's image. It exists in two forms:
+
+- **inline thumbnail** — a small image embedded directly in the message. Renders as a compact thumbnail beside the title (the engine's default). WhatsApp clients shrink it heavily, so it is low-detail by design.
+- **high-res thumbnail** — a larger image uploaded to WhatsApp's media servers and *referenced* by the message. Renders as a full-width image atop the card. Opt-in per send.
+
+The two are not exclusive: a high-res send still carries an inline thumbnail as a fallback. The difference that makes WhatsApp draw the large card is the uploaded image and its declared size, **not** which card "type" the message claims. Distinct from the deal's source image (the CDN original); a Preview Thumbnail is always a resized, re-encoded derivative of it.
+
 ## Price Validity
 
 Whether a price is *real and buyable right now*: live, in stock, New, buy-box, correctly tagged. Established by the [Live Snapshot](#live-snapshot).
