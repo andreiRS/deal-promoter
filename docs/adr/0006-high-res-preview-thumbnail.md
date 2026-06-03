@@ -83,13 +83,14 @@ WhatsApp's practical ceiling on its own).
   *an* image, preserving ADR 0005's degrade-don't-block guarantee. The cost is one
   extra resize/encode and one media upload per high-res send — a second external
   call and failure point that the tiered fallback absorbs.
-- **Open verification risk:** the large-vs-small card is triggered by the uploaded
-  thumbnail and its declared size, and we set `PreviewType: IMAGE` on faith that it
-  matches the low-res path's behaviour. A whatsmeow channel example that is
-  confirmed working instead used `PreviewType: NONE`. The card renders blind until
-  the **first live send to the IronApiTest channel**; if it renders small despite
-  the upload, switching the high-res path to `NONE` is a one-line change. This is
-  the single thing to eyeball on first live send.
+- **Verification resolved (`PreviewType: IMAGE` holds):** the large-vs-small card
+  is triggered by the uploaded thumbnail and its declared size, and we set
+  `PreviewType: IMAGE` on faith that it matches the low-res path's behaviour, while
+  a confirmed-working whatsmeow channel example had used `PreviewType: NONE`. On
+  **2026-06-03** the first live `highRes:true` send to the IronApiTest channel
+  rendered the large, full-width square product image as intended, so `IMAGE` is
+  correct and **no flip to `NONE` was needed**. The one-line `NONE` fallback
+  remains available should a future client change regress the rendering.
 - ADR 0005 still holds — the engine, its graceful degradation, and the keyless
   gateway-only boundary are unchanged; this only adds a second thumbnail path
   behind a default-off flag. `canonicalUrl`, referenced in ADR 0005, no longer
