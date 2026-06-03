@@ -16,6 +16,7 @@ import (
 
 const (
 	thumbnailMaxSide = 256
+	highResMaxSide   = 800
 	thumbnailQuality = 80
 	fetchSizeCap     = 5 * 1024 * 1024 // 5 MB
 	fetchTimeout     = 10 * time.Second
@@ -43,18 +44,35 @@ func thumbErr(reason string, cause error) *ThumbnailError {
 
 // TransformThumbnail decodes a JPEG or PNG from r, resizes the longest side to
 // thumbnailMaxSide (preserving aspect ratio, no upscaling), and re-encodes as
-// JPEG at thumbnailQuality.
+// JPEG at thumbnailQuality. This is the small inline thumbnail.
 func TransformThumbnail(r io.Reader) ([]byte, error) {
+	b, _, _, err := transformToMaxSide(r, thumbnailMaxSide)
+	return b, err
+}
+
+// TransformHighResThumbnail decodes a JPEG or PNG from r, resizes the longest
+// side to highResMaxSide (preserving aspect ratio, no upscaling), re-encodes as
+// JPEG at thumbnailQuality, and returns the bytes plus the actual resized
+// dimensions. The dimensions are declared on the message so WhatsApp draws the
+// large card at the right size.
+func TransformHighResThumbnail(r io.Reader) ([]byte, int, int, error) {
+	return transformToMaxSide(r, highResMaxSide)
+}
+
+// transformToMaxSide decodes, resizes the longest side to maxSide (aspect
+// preserved, never upscaled), and re-encodes as JPEG. It returns the bytes and
+// the actual resized dimensions, shared by both the inline and high-res paths.
+func transformToMaxSide(r io.Reader, maxSide int) ([]byte, int, int, error) {
 	src, _, err := image.Decode(r)
 	if err != nil {
-		return nil, thumbErr("decode failed", err)
+		return nil, 0, 0, thumbErr("decode failed", err)
 	}
 
 	bounds := src.Bounds()
 	w := bounds.Max.X - bounds.Min.X
 	h := bounds.Max.Y - bounds.Min.Y
 
-	newW, newH := resizeDims(w, h, thumbnailMaxSide)
+	newW, newH := resizeDims(w, h, maxSide)
 
 	var dst draw.Image
 	if newW == w && newH == h {
@@ -70,9 +88,9 @@ func TransformThumbnail(r io.Reader) ([]byte, error) {
 
 	var buf bytes.Buffer
 	if err := jpeg.Encode(&buf, dst, &jpeg.Options{Quality: thumbnailQuality}); err != nil {
-		return nil, thumbErr("encode failed", err)
+		return nil, 0, 0, thumbErr("encode failed", err)
 	}
-	return buf.Bytes(), nil
+	return buf.Bytes(), newW, newH, nil
 }
 
 // resizeDims calculates the new width and height such that the longest side is
