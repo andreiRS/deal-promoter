@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -66,8 +67,9 @@ func BuildHighResExtendedTextMessage(text string, preview PreviewMeta, inlineThu
 
 // sendFunc is the injectable function signature for actually dispatching a
 // message to WhatsApp. In production this wraps client.SendMessage; in tests it
-// is replaced by a stub so no network call is made.
-type sendFunc func(chatID string, msg *waE2E.Message) (string, error)
+// is replaced by a stub so no network call is made. mediaHandle is the upload
+// handle for a high-res thumbnail; the low-res path passes "" (no handle).
+type sendFunc func(chatID string, msg *waE2E.Message, mediaHandle string) (string, error)
 
 // uploadResult is the subset of whatsmeow.UploadResponse the high-res path uses.
 // Newsletter media is unencrypted, so MediaKey/FileEncSHA256 are empty by design.
@@ -106,14 +108,21 @@ func buildUploadedHighRes(deps sendDeps, req SendRequest, inline, highResJPEG []
 // real whatsmeow client.
 type sendDeps struct {
 	fetchThumbnail  func(url string) ([]byte, error)
+	fetchSource     func(url string) ([]byte, error)
 	uploadThumbnail uploadFunc
 	sendMessage     sendFunc
 	warnLog         func(format string, args ...any)
 }
 
 // sendWithDeps is the pure send logic extracted so it can be shared by both
-// RealEngineStub (tests) and RealEngine (production).
+// RealEngineStub (tests) and RealEngine (production). On the opt-in high-res
+// path it produces a large uploaded thumbnail; otherwise it keeps today's
+// inline-only behaviour byte-for-byte.
 func sendWithDeps(deps sendDeps, req SendRequest) (string, error) {
+	if req.Preview.HighRes {
+		return sendHighRes(deps, req)
+	}
+
 	thumb, err := deps.fetchThumbnail(req.Preview.Image)
 	if err != nil {
 		deps.warnLog("thumbnail fetch failed for %s: %v; sending without thumbnail", req.Preview.Image, err)
@@ -121,8 +130,49 @@ func sendWithDeps(deps sendDeps, req SendRequest) (string, error) {
 	}
 
 	msg := BuildExtendedTextMessage(req.Text, req.Preview, thumb)
+	return dispatch(deps, req.ChatID, msg, "")
+}
 
-	id, err := deps.sendMessage(req.ChatID, msg)
+// sendHighRes fetches the source once, derives the inline 256px fallback and the
+// 800px uploaded thumbnail, references the uploaded one on the message, and sends
+// with its media handle.
+func sendHighRes(deps sendDeps, req SendRequest) (string, error) {
+	source, err := deps.fetchSource(req.Preview.Image)
+	if err != nil {
+		// Fetch failed: post the card with no image at all.
+		deps.warnLog("source fetch failed for %s: %v; sending without image", req.Preview.Image, err)
+		msg := BuildExtendedTextMessage(req.Text, req.Preview, nil)
+		return dispatch(deps, req.ChatID, msg, "")
+	}
+
+	inline, err := TransformThumbnail(bytes.NewReader(source))
+	if err != nil {
+		// The source decoded for neither size: post with no image.
+		deps.warnLog("inline thumbnail transform failed for %s: %v; sending without image", req.Preview.Image, err)
+		msg := BuildExtendedTextMessage(req.Text, req.Preview, nil)
+		return dispatch(deps, req.ChatID, msg, "")
+	}
+
+	highRes, w, h, err := TransformHighResThumbnail(bytes.NewReader(source))
+	if err == nil {
+		var msg *waE2E.Message
+		var handle string
+		msg, handle, err = buildUploadedHighRes(deps, req, inline, highRes, w, h)
+		if err == nil {
+			return dispatch(deps, req.ChatID, msg, handle)
+		}
+	}
+
+	// High-res transform or upload failed: fall back to the small inline card,
+	// still post. (Inline already succeeded above.)
+	deps.warnLog("high-res thumbnail failed for %s: %v; sending inline card", req.Preview.Image, err)
+	inlineMsg := BuildExtendedTextMessage(req.Text, req.Preview, inline)
+	return dispatch(deps, req.ChatID, inlineMsg, "")
+}
+
+// dispatch hands the built message to the send seam, wrapping the error.
+func dispatch(deps sendDeps, chatID string, msg *waE2E.Message, mediaHandle string) (string, error) {
+	id, err := deps.sendMessage(chatID, msg, mediaHandle)
 	if err != nil {
 		return "", fmt.Errorf("send message: %w", err)
 	}
@@ -133,6 +183,7 @@ func sendWithDeps(deps sendDeps, req SendRequest) (string, error) {
 func (e *RealEngine) Send(req SendRequest) (string, error) {
 	deps := sendDeps{
 		fetchThumbnail: FetchThumbnail,
+		fetchSource:    FetchImageBytes,
 		uploadThumbnail: func(jpeg []byte) (uploadResult, error) {
 			resp, err := e.client.UploadNewsletter(context.Background(), jpeg, whatsmeow.MediaLinkThumbnail)
 			if err != nil {
@@ -144,12 +195,17 @@ func (e *RealEngine) Send(req SendRequest) (string, error) {
 				Handle:     resp.Handle,
 			}, nil
 		},
-		sendMessage: func(chatID string, msg *waE2E.Message) (string, error) {
+		sendMessage: func(chatID string, msg *waE2E.Message, mediaHandle string) (string, error) {
 			jid, err := types.ParseJID(chatID)
 			if err != nil {
 				return "", fmt.Errorf("parse JID %q: %w", chatID, err)
 			}
-			resp, err := e.client.SendMessage(context.Background(), jid, msg)
+			var resp whatsmeow.SendResponse
+			if mediaHandle != "" {
+				resp, err = e.client.SendMessage(context.Background(), jid, msg, whatsmeow.SendRequestExtra{MediaHandle: mediaHandle})
+			} else {
+				resp, err = e.client.SendMessage(context.Background(), jid, msg)
+			}
 			if err != nil {
 				return "", err
 			}
@@ -167,9 +223,10 @@ type sendRequestBody struct {
 	ChatID  string `json:"chatId"`
 	Text    string `json:"text"`
 	Preview struct {
-		URL   string `json:"url"`
-		Title string `json:"title"`
-		Image string `json:"image"`
+		URL     string `json:"url"`
+		Title   string `json:"title"`
+		Image   string `json:"image"`
+		HighRes bool   `json:"highRes"`
 	} `json:"preview"`
 }
 
@@ -185,9 +242,10 @@ func handleSend(e Engine) http.HandlerFunc {
 			ChatID: body.ChatID,
 			Text:   body.Text,
 			Preview: PreviewMeta{
-				URL:   body.Preview.URL,
-				Title: body.Preview.Title,
-				Image: body.Preview.Image,
+				URL:     body.Preview.URL,
+				Title:   body.Preview.Title,
+				Image:   body.Preview.Image,
+				HighRes: body.Preview.HighRes,
 			},
 		}
 

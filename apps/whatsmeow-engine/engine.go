@@ -43,11 +43,14 @@ type SendRequest struct {
 	Preview PreviewMeta
 }
 
-// PreviewMeta holds the link-preview fields for a send request.
+// PreviewMeta holds the link-preview fields for a send request. HighRes is the
+// opt-in flag (default false) selecting the large uploaded thumbnail card; false
+// keeps the inline-only behaviour.
 type PreviewMeta struct {
-	URL   string
-	Title string
-	Image string
+	URL     string
+	Title   string
+	Image   string
+	HighRes bool
 }
 
 // Engine is the interface all HTTP handlers depend on.
