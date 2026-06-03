@@ -15,9 +15,9 @@ re-posted.
 
 The full vision lives in [`docs/specs/product.md`](docs/specs/product.md); the
 pipeline build spec in [`apps/pipeline/docs/specs/pipeline.md`](apps/pipeline/docs/specs/pipeline.md);
-the engine spec in [`docs/specs/whatsmeow-engine.md`](docs/specs/whatsmeow-engine.md);
-the canonical vocabulary in [`GLOSSARY.md`](GLOSSARY.md). Read the glossary first
-if a capitalised term below is unfamiliar.
+the engine and its decisions in the [ADRs](docs/adr/); the canonical vocabulary
+in [`GLOSSARY.md`](GLOSSARY.md). Read the glossary first if a capitalised term
+below is unfamiliar.
 
 ## Quick start
 
@@ -208,6 +208,14 @@ flowchart LR
   rejects everything).
 - The engine itself needs no second key: it is keyless and reachable only on the
   compose network, so the trust boundary is the network, not a header.
+
+**Preview card.** The engine builds its own link-preview card and, opt-in per
+send (`preview.highRes`), uploads an 800px newsletter thumbnail that makes
+WhatsApp draw the large, full-width product image atop the card; the default
+inline 256px thumbnail stays as a fallback and a tiered graceful degradation
+keeps a failed upload from blocking the send. Default-off, so today's inline-only
+path is unchanged ([ADR 0006](docs/adr/0006-high-res-preview-thumbnail.md),
+[GLOSSARY: Preview Thumbnail](GLOSSARY.md)).
 
 The gateway also serves the **attended** surfaces a machine cannot drive: a
 pairing page (scan a QR to connect a WhatsApp account, persisted in the engine's
