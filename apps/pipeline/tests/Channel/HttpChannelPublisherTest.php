@@ -155,6 +155,24 @@ final class HttpChannelPublisherTest extends TestCase
         self::assertSame('https://images.amazon.com/cool-gadget.jpg', $decoded['preview']['image']);
     }
 
+    public function testRequestOptsIntoHighResPreview(): void
+    {
+        $captured = [];
+        $http = new MockHttpClient(static function (string $method, string $url, array $options) use (&$captured): MockResponse {
+            $captured['body'] = $options['body'] ?? null;
+
+            return new MockResponse('{"ok":true}', ['http_code' => 200]);
+        });
+
+        $em = $this->createMock(EntityManagerInterface::class);
+        $publisher = $this->publisher($http, $em);
+        $publisher->publish($this->fakeDeal('B000HR0001', 1299, 'https://www.amazon.de/dp/B000HR0001?tag=t-21'));
+
+        /** @var array{preview: array{highRes: bool}} $decoded */
+        $decoded = json_decode((string) $captured['body'], true, 512, \JSON_THROW_ON_ERROR);
+        self::assertTrue($decoded['preview']['highRes']);
+    }
+
     public function testGermanThousandsSeparatorInMessage(): void
     {
         $captured = [];

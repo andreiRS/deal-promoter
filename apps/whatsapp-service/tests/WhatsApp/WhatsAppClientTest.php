@@ -247,6 +247,43 @@ final class WhatsAppClientTest extends TestCase
         self::assertTrue($result['ok']);
     }
 
+    public function testSendTextForwardsHighResFlagWhenSet(): void
+    {
+        $response = new MockResponse(
+            json_encode(['id' => 'msg-hr'], \JSON_THROW_ON_ERROR),
+            ['response_headers' => ['Content-Type' => 'application/json']],
+        );
+        $http = new MockHttpClient($response);
+        $client = new WhatsAppClient($http, 'http://engine:8080');
+
+        $preview = [
+            'url' => 'https://example.com/deal',
+            'title' => 'Great Deal',
+            'image' => 'https://example.com/img.jpg',
+            'highRes' => true,
+        ];
+        $client->sendText('abc@newsletter', 'Check this!', $preview);
+
+        $body = json_decode($response->getRequestOptions()['body'], true, 512, \JSON_THROW_ON_ERROR);
+        self::assertTrue($body['preview']['highRes']);
+    }
+
+    public function testSendTextDefaultsHighResToFalseWhenAbsent(): void
+    {
+        $response = new MockResponse(
+            json_encode(['id' => 'msg-no-hr'], \JSON_THROW_ON_ERROR),
+            ['response_headers' => ['Content-Type' => 'application/json']],
+        );
+        $http = new MockHttpClient($response);
+        $client = new WhatsAppClient($http, 'http://engine:8080');
+
+        $preview = ['url' => 'https://example.com/deal', 'title' => 'Great Deal', 'image' => 'https://example.com/img.jpg'];
+        $client->sendText('abc@newsletter', 'Check this!', $preview);
+
+        $body = json_decode($response->getRequestOptions()['body'], true, 512, \JSON_THROW_ON_ERROR);
+        self::assertFalse($body['preview']['highRes']);
+    }
+
     public function testSendTextWithoutPreviewDoesNotSendPreviewKey(): void
     {
         $responsePayload = json_encode(['id' => 'msg-3'], \JSON_THROW_ON_ERROR);

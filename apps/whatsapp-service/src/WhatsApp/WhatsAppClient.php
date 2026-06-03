@@ -91,10 +91,12 @@ final class WhatsAppClient
     }
 
     /**
-     * POST /send. Sends {chatId, text} — and optionally {preview:{url,title,image}}
-     * — to the engine. Returns {ok, status, data} matching the existing caller shape.
+     * POST /send. Sends {chatId, text} — and optionally
+     * {preview:{url,title,image,highRes}} — to the engine. The opt-in highRes flag
+     * is normalized to a bool (default false) so the engine always receives an
+     * explicit value. Returns {ok, status, data} matching the existing caller shape.
      *
-     * @param array{url: string, title: string, image: string}|null $preview
+     * @param array{url: string, title: string, image: string, highRes?: bool}|null $preview
      *
      * @return array{ok: bool, status: int, data: mixed}
      */
@@ -103,6 +105,7 @@ final class WhatsAppClient
         $body = ['chatId' => $chatId, 'text' => $text];
 
         if (null !== $preview) {
+            $preview['highRes'] = (bool) ($preview['highRes'] ?? false);
             $body['preview'] = $preview;
         }
 
