@@ -44,7 +44,7 @@ final class ChannelController extends AbstractController
     #[Route('/ui/send', name: 'ui_send', methods: ['POST'])]
     public function uiSend(Request $request): JsonResponse
     {
-        /** @var array{chatId?: string, text?: string, preview?: array{url: string, title: string, image: string}} $body */
+        /** @var array{chatId?: string, text?: string, preview?: array{url: string, title: string, image: string, highRes?: bool}} $body */
         $body = json_decode((string) $request->getContent(), true, 512, \JSON_THROW_ON_ERROR);
         $chatId = $body['chatId'] ?? '';
         $text = trim($body['text'] ?? '');
@@ -63,7 +63,7 @@ final class ChannelController extends AbstractController
             return new JsonResponse(['error' => 'Unauthorized'], Response::HTTP_UNAUTHORIZED);
         }
 
-        /** @var array{chatId?: string, text?: string, preview?: array{url: string, title: string, image: string}} $body */
+        /** @var array{chatId?: string, text?: string, preview?: array{url: string, title: string, image: string, highRes?: bool}} $body */
         $body = json_decode((string) $request->getContent(), true, 512, \JSON_THROW_ON_ERROR);
         $chatId = $body['chatId'] ?? '';
         $text = trim($body['text'] ?? '');
@@ -78,7 +78,7 @@ final class ChannelController extends AbstractController
      * Applies guardSend (400 on failure), then calls WhatsAppClient::sendText (502 on
      * transport failure). Both routes must go through here — no duplicated engine call.
      *
-     * @param array{url: string, title: string, image: string}|null $preview
+     * @param array{url: string, title: string, image: string, highRes?: bool}|null $preview
      */
     private function deliver(string $chatId, string $text, ?array $preview = null): JsonResponse
     {

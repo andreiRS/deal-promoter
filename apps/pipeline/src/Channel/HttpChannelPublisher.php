@@ -34,6 +34,13 @@ final readonly class HttpChannelPublisher implements ChannelPublisher
      */
     public const array SALE_EMOJIS = ['🔥', '💰', '🏷️', '⚡', '🎉'];
 
+    /**
+     * Single source of truth for the opt-in high-res preview card. The pipeline
+     * is the caller that opts every post into the large product image; flip this
+     * to fall back to the small inline card (or replace with a config toggle).
+     */
+    public const bool HIGH_RES_PREVIEW = true;
+
     public function __construct(
         private HttpClientInterface $http,
         private EntityManagerInterface $em,
@@ -69,6 +76,7 @@ final readonly class HttpChannelPublisher implements ChannelPublisher
                         'url' => $affiliateUrl,
                         'title' => $deal->getTitle(),
                         'image' => (string) ($deal->getImageUrl() ?? ''),
+                        'highRes' => self::HIGH_RES_PREVIEW,
                     ],
                 ],
             ]);

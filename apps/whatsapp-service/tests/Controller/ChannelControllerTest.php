@@ -397,6 +397,67 @@ final class ChannelControllerTest extends WebTestCase
         self::assertSame('https://example.com/p.jpg', $body['preview']['image']);
     }
 
+    public function testSendForwardsHighResFlagToEngine(): void
+    {
+        $client = self::createClient();
+        $responsePayload = json_encode(['id' => 'msg-hr'], \JSON_THROW_ON_ERROR);
+        $engineResponse = new MockResponse(
+            $responsePayload,
+            ['response_headers' => ['Content-Type' => 'application/json']],
+        );
+        $this->mockEngineCapture($engineResponse);
+
+        $client->request(
+            'POST',
+            '/send',
+            [],
+            [],
+            ['HTTP_X_INTERNAL_KEY' => 'test-internal-key', 'CONTENT_TYPE' => 'application/json'],
+            json_encode([
+                'chatId' => 'abc@newsletter',
+                'text' => 'High-res send',
+                'preview' => [
+                    'url' => 'https://example.com/p',
+                    'title' => 'Product',
+                    'image' => 'https://example.com/p.jpg',
+                    'highRes' => true,
+                ],
+            ], \JSON_THROW_ON_ERROR),
+        );
+
+        self::assertResponseIsSuccessful();
+        $body = json_decode($engineResponse->getRequestOptions()['body'], true, 512, \JSON_THROW_ON_ERROR);
+        self::assertTrue($body['preview']['highRes']);
+    }
+
+    public function testSendDefaultsHighResToFalseWhenAbsent(): void
+    {
+        $client = self::createClient();
+        $responsePayload = json_encode(['id' => 'msg-default-hr'], \JSON_THROW_ON_ERROR);
+        $engineResponse = new MockResponse(
+            $responsePayload,
+            ['response_headers' => ['Content-Type' => 'application/json']],
+        );
+        $this->mockEngineCapture($engineResponse);
+
+        $client->request(
+            'POST',
+            '/send',
+            [],
+            [],
+            ['HTTP_X_INTERNAL_KEY' => 'test-internal-key', 'CONTENT_TYPE' => 'application/json'],
+            json_encode([
+                'chatId' => 'abc@newsletter',
+                'text' => 'Default send',
+                'preview' => ['url' => 'https://example.com/p', 'title' => 'Product', 'image' => 'https://example.com/p.jpg'],
+            ], \JSON_THROW_ON_ERROR),
+        );
+
+        self::assertResponseIsSuccessful();
+        $body = json_decode($engineResponse->getRequestOptions()['body'], true, 512, \JSON_THROW_ON_ERROR);
+        self::assertFalse($body['preview']['highRes']);
+    }
+
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
