@@ -28,6 +28,29 @@ func (s *RealEngineStub) SetWarnLogger(fn func(format string, args ...any)) {
 	s.deps.warnLog = fn
 }
 
+// SetSourceFetcher injects the raw-source fetch seam used by the high-res path.
+func (s *RealEngineStub) SetSourceFetcher(fn func(url string) ([]byte, error)) {
+	s.deps.fetchSource = fn
+}
+
+// SetUploadThumbnail injects the high-res upload seam. The stub returns the
+// upload's DirectPath/SHA256/Handle so the path can be tested without a live
+// whatsmeow client.
+func (s *RealEngineStub) SetUploadThumbnail(fn func(jpeg []byte) (UploadResult, error)) {
+	s.deps.uploadThumbnail = func(jpeg []byte) (uploadResult, error) {
+		r, err := fn(jpeg)
+		return uploadResult(r), err
+	}
+}
+
+// UploadResult is the exported mirror of uploadResult for tests that inject the
+// upload seam via SetUploadThumbnail.
+type UploadResult struct {
+	DirectPath string
+	SHA256     []byte
+	Handle     string
+}
+
 // Send implements the send-with-degrade logic using injected stubs.
 func (s *RealEngineStub) Send(req SendRequest) (string, error) {
 	return sendWithDeps(s.deps, req)

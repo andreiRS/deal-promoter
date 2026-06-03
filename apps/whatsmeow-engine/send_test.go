@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"image"
+	"image/color"
+	"image/jpeg"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,6 +16,23 @@ import (
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
 )
+
+// makeSourceJPEG returns a JPEG-encoded image of the given dimensions, used as
+// the raw source the high-res path fetches and derives both thumbnails from.
+func makeSourceJPEG(t *testing.T, w, h int) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			img.Set(x, y, color.RGBA{R: 200, G: 100, B: 50, A: 255})
+		}
+	}
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, img, nil); err != nil {
+		t.Fatalf("makeSourceJPEG: %v", err)
+	}
+	return buf.Bytes()
+}
 
 // ---------- pure builder tests ----------
 
@@ -156,7 +176,7 @@ func TestRealEngineDegrade_ThumbnailSuccess_MessageCarriesThumbnail(t *testing.T
 
 	e := engine.NewRealEngineWithStubs(
 		func(url string) ([]byte, error) { return thumb, nil },
-		func(jid string, msg *waE2E.Message) (string, error) {
+		func(jid string, msg *waE2E.Message, mediaHandle string) (string, error) {
 			capturedJID = jid
 			capturedMsg = msg
 			return "msg-id-123", nil
@@ -198,7 +218,7 @@ func TestRealEngineDegrade_ThumbnailError_MessageSentWithoutThumbnail(t *testing
 
 	e := engine.NewRealEngineWithStubs(
 		func(url string) ([]byte, error) { return nil, fetchErr },
-		func(jid string, msg *waE2E.Message) (string, error) {
+		func(jid string, msg *waE2E.Message, mediaHandle string) (string, error) {
 			capturedMsg = msg
 			return "msg-id-456", nil
 		},
@@ -242,6 +262,200 @@ func TestRealEngineDegrade_ThumbnailError_MessageSentWithoutThumbnail(t *testing
 	}
 }
 
+// ---------- high-res send path (injected fetch/upload/send seams) ----------
+
+func TestSend_HighRes_UploadSuccess_CarriesUploadedThumbnailAndHandle(t *testing.T) {
+	source := makeSourceJPEG(t, 1000, 1000) // square -> 800x800 high-res
+	var uploadedJPEG []byte
+	var capturedMsg *waE2E.Message
+	var capturedHandle string
+
+	e := engine.NewRealEngineWithStubs(
+		func(url string) ([]byte, error) {
+			t.Fatal("low-res fetchThumbnail must not be called on the high-res path")
+			return nil, nil
+		},
+		func(jid string, msg *waE2E.Message, mediaHandle string) (string, error) {
+			capturedMsg = msg
+			capturedHandle = mediaHandle
+			return "msg-hr-1", nil
+		},
+	)
+	e.SetSourceFetcher(func(url string) ([]byte, error) { return source, nil })
+	e.SetUploadThumbnail(func(jpeg []byte) (engine.UploadResult, error) {
+		uploadedJPEG = jpeg
+		return engine.UploadResult{DirectPath: "/v/high-res", SHA256: []byte{0x0A, 0x0B}, Handle: "h-xyz"}, nil
+	})
+
+	id, err := e.Send(engine.SendRequest{
+		ChatID:  "123@newsletter",
+		Text:    "Deal",
+		Preview: engine.PreviewMeta{URL: "https://ex.com", Title: "Prod", Image: "https://img/x.jpg", HighRes: true},
+	})
+	if err != nil {
+		t.Fatalf("Send returned error: %v", err)
+	}
+	if id != "msg-hr-1" {
+		t.Errorf("id = %q, want %q", id, "msg-hr-1")
+	}
+	if capturedHandle != "h-xyz" {
+		t.Errorf("media handle passed to sender = %q, want %q", capturedHandle, "h-xyz")
+	}
+	if len(uploadedJPEG) == 0 {
+		t.Error("upload seam was not called with the high-res jpeg")
+	}
+
+	ext := capturedMsg.GetExtendedTextMessage()
+	if got := ext.GetThumbnailDirectPath(); got != "/v/high-res" {
+		t.Errorf("ThumbnailDirectPath = %q, want %q", got, "/v/high-res")
+	}
+	if !bytes.Equal(ext.GetThumbnailSHA256(), []byte{0x0A, 0x0B}) {
+		t.Errorf("ThumbnailSHA256 = %v, want %v", ext.GetThumbnailSHA256(), []byte{0x0A, 0x0B})
+	}
+	if got := ext.GetThumbnailWidth(); got != 800 {
+		t.Errorf("ThumbnailWidth = %d, want 800", got)
+	}
+	if got := ext.GetThumbnailHeight(); got != 800 {
+		t.Errorf("ThumbnailHeight = %d, want 800", got)
+	}
+	if len(ext.GetJPEGThumbnail()) == 0 {
+		t.Error("inline JPEGThumbnail fallback should still be set on the high-res path")
+	}
+}
+
+func TestSend_HighRes_UploadFails_DegradesToInlineCard(t *testing.T) {
+	source := makeSourceJPEG(t, 1000, 1000)
+	var logBuf strings.Builder
+	var capturedMsg *waE2E.Message
+	var capturedHandle string
+
+	e := engine.NewRealEngineWithStubs(
+		func(url string) ([]byte, error) {
+			t.Fatal("low-res fetchThumbnail must not be called on the high-res path")
+			return nil, nil
+		},
+		func(jid string, msg *waE2E.Message, mediaHandle string) (string, error) {
+			capturedMsg = msg
+			capturedHandle = mediaHandle
+			return "msg-degraded", nil
+		},
+	)
+	e.SetSourceFetcher(func(url string) ([]byte, error) { return source, nil })
+	e.SetUploadThumbnail(func(jpeg []byte) (engine.UploadResult, error) {
+		return engine.UploadResult{}, errors.New("upload boom")
+	})
+	e.SetWarnLogger(func(format string, args ...any) { logBuf.WriteString("WARN") })
+
+	id, err := e.Send(engine.SendRequest{
+		ChatID:  "123@newsletter",
+		Text:    "Deal",
+		Preview: engine.PreviewMeta{URL: "https://ex.com", Title: "Prod", Image: "https://img/x.jpg", HighRes: true},
+	})
+	if err != nil {
+		t.Fatalf("Send must succeed on upload failure (degrade), got: %v", err)
+	}
+	if id != "msg-degraded" {
+		t.Errorf("id = %q, want %q", id, "msg-degraded")
+	}
+	if capturedHandle != "" {
+		t.Errorf("media handle = %q, want empty on the degraded inline path", capturedHandle)
+	}
+	ext := capturedMsg.GetExtendedTextMessage()
+	if got := ext.GetThumbnailDirectPath(); got != "" {
+		t.Errorf("ThumbnailDirectPath = %q, want empty when upload failed", got)
+	}
+	if len(ext.GetJPEGThumbnail()) == 0 {
+		t.Error("inline JPEGThumbnail should be set on the degraded card")
+	}
+	if !strings.Contains(logBuf.String(), "WARN") {
+		t.Error("expected a warning to be logged on upload failure")
+	}
+}
+
+func TestSend_HighRes_FetchFails_SendsWithoutImage(t *testing.T) {
+	var logBuf strings.Builder
+	var capturedMsg *waE2E.Message
+
+	e := engine.NewRealEngineWithStubs(
+		func(url string) ([]byte, error) {
+			t.Fatal("low-res fetchThumbnail must not be called on the high-res path")
+			return nil, nil
+		},
+		func(jid string, msg *waE2E.Message, mediaHandle string) (string, error) {
+			capturedMsg = msg
+			return "msg-noimage", nil
+		},
+	)
+	e.SetSourceFetcher(func(url string) ([]byte, error) { return nil, errors.New("fetch boom") })
+	e.SetUploadThumbnail(func(jpeg []byte) (engine.UploadResult, error) {
+		t.Fatal("upload must not be called when the source fetch fails")
+		return engine.UploadResult{}, nil
+	})
+	e.SetWarnLogger(func(format string, args ...any) { logBuf.WriteString("WARN") })
+
+	id, err := e.Send(engine.SendRequest{
+		ChatID:  "123@newsletter",
+		Text:    "Deal",
+		Preview: engine.PreviewMeta{URL: "https://ex.com", Title: "Prod", Image: "https://img/x.jpg", HighRes: true},
+	})
+	if err != nil {
+		t.Fatalf("Send must succeed on fetch failure (degrade), got: %v", err)
+	}
+	if id != "msg-noimage" {
+		t.Errorf("id = %q, want %q", id, "msg-noimage")
+	}
+	ext := capturedMsg.GetExtendedTextMessage()
+	if ext.GetJPEGThumbnail() != nil {
+		t.Error("JPEGThumbnail should be nil when the source fetch fails")
+	}
+	if got := ext.GetThumbnailDirectPath(); got != "" {
+		t.Errorf("ThumbnailDirectPath = %q, want empty when fetch failed", got)
+	}
+	// Other fields still set.
+	if got := ext.GetTitle(); got != "Prod" {
+		t.Errorf("Title = %q, want %q", got, "Prod")
+	}
+	if !strings.Contains(logBuf.String(), "WARN") {
+		t.Error("expected a warning to be logged on fetch failure")
+	}
+}
+
+func TestSend_LowRes_DoesNotUploadAndPassesNoHandle(t *testing.T) {
+	thumb := []byte{0xFF, 0xD8, 0x42}
+	var capturedHandle string
+
+	e := engine.NewRealEngineWithStubs(
+		func(url string) ([]byte, error) { return thumb, nil },
+		func(jid string, msg *waE2E.Message, mediaHandle string) (string, error) {
+			capturedHandle = mediaHandle
+			return "msg-low", nil
+		},
+	)
+	e.SetSourceFetcher(func(url string) ([]byte, error) {
+		t.Fatal("source fetch must not be called on the low-res path")
+		return nil, nil
+	})
+	e.SetUploadThumbnail(func(jpeg []byte) (engine.UploadResult, error) {
+		t.Fatal("upload must not be called on the low-res path")
+		return engine.UploadResult{}, nil
+	})
+
+	id, err := e.Send(engine.SendRequest{
+		ChatID:  "123@newsletter",
+		Text:    "Deal",
+		Preview: engine.PreviewMeta{URL: "https://ex.com", Title: "Prod", Image: "https://img/x.jpg", HighRes: false},
+	})
+	if err != nil {
+		t.Fatalf("Send returned error: %v", err)
+	}
+	if id != "msg-low" {
+		t.Errorf("id = %q, want %q", id, "msg-low")
+	}
+	if capturedHandle != "" {
+		t.Errorf("media handle = %q, want empty on the low-res path", capturedHandle)
+	}
+}
+
 // ---------- /send HTTP handler tests ----------
 
 func TestSendHandler_ValidBody_Returns200WithMessageID(t *testing.T) {
@@ -270,6 +484,34 @@ func TestSendHandler_ValidBody_Returns200WithMessageID(t *testing.T) {
 	}
 	if resp.ID != "fake-msg-id" {
 		t.Errorf("response id = %q, want %q", resp.ID, "fake-msg-id")
+	}
+}
+
+func TestSendHandler_DecodesHighResFlag(t *testing.T) {
+	fake := &engine.FakeEngine{State: engine.ConnStateWorking, SendID: "fake-id"}
+	srv := engine.NewServer(fake)
+
+	body := `{"chatId":"123@newsletter","text":"hello","preview":{"url":"https://ex.com","title":"Ex","image":"https://img/i.jpg","highRes":true}}`
+	req := httptest.NewRequest(http.MethodPost, "/send", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	srv.ServeHTTP(httptest.NewRecorder(), req)
+
+	if !fake.LastSendRequest.Preview.HighRes {
+		t.Error("handler did not map preview.highRes=true onto the SendRequest")
+	}
+}
+
+func TestSendHandler_HighResDefaultsFalseWhenAbsent(t *testing.T) {
+	fake := &engine.FakeEngine{State: engine.ConnStateWorking, SendID: "fake-id"}
+	srv := engine.NewServer(fake)
+
+	body := `{"chatId":"123@newsletter","text":"hello","preview":{"url":"https://ex.com","title":"Ex","image":"https://img/i.jpg"}}`
+	req := httptest.NewRequest(http.MethodPost, "/send", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	srv.ServeHTTP(httptest.NewRecorder(), req)
+
+	if fake.LastSendRequest.Preview.HighRes {
+		t.Error("preview.highRes should default to false when omitted")
 	}
 }
 

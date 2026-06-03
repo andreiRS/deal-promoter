@@ -12,6 +12,8 @@ type FakeEngine struct {
 	QRImageOK         bool      // ok flag returned by QRImage
 	ChannelsList      []Channel // returned by Channels
 	ChannelsError     error     // returned by Channels if non-nil
+
+	LastSendRequest SendRequest // captures the last request passed to Send
 }
 
 func (f *FakeEngine) Status() string {
@@ -43,5 +45,6 @@ func (f *FakeEngine) Channels() ([]Channel, error) {
 }
 
 func (f *FakeEngine) Send(req SendRequest) (string, error) {
+	f.LastSendRequest = req
 	return f.SendID, f.SendError
 }

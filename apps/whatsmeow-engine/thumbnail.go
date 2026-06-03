@@ -109,10 +109,11 @@ func resizeDims(w, h, maxSide int) (int, int) {
 	return newW, maxSide
 }
 
-// FetchThumbnail fetches the image at imageURL, enforces the size cap, checks
-// the content-type, and returns the resized JPEG thumbnail bytes.
+// FetchImageBytes fetches the raw image at imageURL, enforces the size cap, and
+// checks the content-type, returning the undecoded source bytes. The high-res
+// path fetches the source once and derives both thumbnails from these bytes.
 // It returns a *ThumbnailError on any failure so callers can degrade gracefully.
-func FetchThumbnail(imageURL string) ([]byte, error) {
+func FetchImageBytes(imageURL string) ([]byte, error) {
 	client := &http.Client{Timeout: fetchTimeout}
 
 	req, err := http.NewRequest(http.MethodGet, imageURL, nil)
@@ -142,5 +143,16 @@ func FetchThumbnail(imageURL string) ([]byte, error) {
 		return nil, thumbErr(fmt.Sprintf("image exceeds size cap (%d bytes)", fetchSizeCap), nil)
 	}
 
+	return data, nil
+}
+
+// FetchThumbnail fetches the image at imageURL and returns the resized inline
+// JPEG thumbnail bytes. It returns a *ThumbnailError on any failure so callers
+// can degrade gracefully.
+func FetchThumbnail(imageURL string) ([]byte, error) {
+	data, err := FetchImageBytes(imageURL)
+	if err != nil {
+		return nil, err
+	}
 	return TransformThumbnail(bytes.NewReader(data))
 }
