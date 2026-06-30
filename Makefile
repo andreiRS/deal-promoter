@@ -46,8 +46,9 @@ setup: up install migrate migrate-test ## First-run: start, install deps, migrat
 ## ----------------------------------------------------------------------------
 
 .PHONY: install
-install: ## Install Composer dependencies
+install: ## Install Composer dependencies (pipeline + whatsapp-service)
 	$(EXEC) composer install
+	$(DC) exec whatsapp-service composer install
 
 .PHONY: migrate
 migrate: ## Run pending Doctrine migrations
