@@ -35,7 +35,7 @@
                 </thead>
                 <tbody>
                     {% for deal in cycle.foundDeals %}
-                        <tr class="deal{% if deal.hasAmazonAttestation %} deal--att{% endif %}">
+                        <tr class="deal{% if deal.amazonVerified %} deal--verified{% endif %}">
                             <td class="product">
                                 <div class="product-cell">
                                     {% if deal.imageUrl %}
@@ -45,9 +45,9 @@
                                     {% endif %}
                                     <div class="product-text">
                                         <div class="title-line">{{ deal.title }}</div>
-                                        {% if deal.hasAmazonAttestation %}
-                                            <div class="att-mark">
-                                                <span class="chip chip--att" title="Amazon's own evidence the discount is real (deal badge or WAS_PRICE)">&check; Amazon-attested</span>
+                                        {% if deal.amazonVerified %}
+                                            <div class="verified-mark">
+                                                <span class="chip chip--verified" title="Amazon's own evidence the discount is real (deal badge or WAS_PRICE)">&check; Amazon-verified</span>
                                             </div>
                                         {% endif %}
                                     </div>

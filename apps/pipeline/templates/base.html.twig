@@ -96,8 +96,8 @@
         tr.deal td { padding-bottom: 0.2rem; }
         .mono { font-family: 'JetBrains Mono', monospace; }
 
-        /* Amazon attestation: Amazon's own evidence the discount is real. */
-        .deal--att td.product { border-left: 3px solid var(--success); }
+        /* Amazon-verified: Amazon's own evidence the discount is real. */
+        .deal--verified td.product { border-left: 3px solid var(--success); }
 
         .product-cell { display: flex; gap: 0.6rem; align-items: flex-start; }
         .thumb {
@@ -117,7 +117,7 @@
         }
         .product-text { min-width: 0; }
         .title-line { font-weight: 600; line-height: 1.3; }
-        .att-mark { margin-top: 0.2rem; }
+        .verified-mark { margin-top: 0.2rem; }
 
         .price { font-weight: 700; white-space: nowrap; }
 
@@ -133,7 +133,7 @@
             color: var(--highlight);
             white-space: nowrap;
         }
-        .chip--att {
+        .chip--verified {
             border-color: var(--success);
             color: var(--success);
             background: color-mix(in srgb, var(--success) 12%, transparent);
@@ -200,7 +200,7 @@
                 padding: 0.85rem 0.85rem 0.3rem;
                 margin: 0.75rem 0 0;
             }
-            tr.deal.deal--att { border-left: 3px solid var(--success); }
+            tr.deal.deal--verified { border-left: 3px solid var(--success); }
             tr.deal td { border: 0; padding: 0.3rem 0; }
             tr.deal td.product { border-left: 0; }
 
@@ -224,7 +224,7 @@
                 border-radius: 0 0 12px 12px;
                 margin: 0 0 0.75rem;
             }
-            tr.detail.deal--att { border-left: 3px solid var(--success); }
+            tr.detail.deal--verified { border-left: 3px solid var(--success); }
             tr.detail td { padding: 0 0.85rem 0.4rem; border: 0; }
             .signals { grid-template-columns: auto 1fr; }
         }

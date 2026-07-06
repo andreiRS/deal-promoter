@@ -139,9 +139,9 @@ affiliate link we post is the one this API returns, not a hand-built URL.
 >   Keepa's `avg90` published fake 80%+ drops (Keepa avg90 is persistently polluted by long
 >   OOS / third-party gouging). Live validation proves the price is real and buyable, not that
 >   it is genuinely X% off. For the advertised %, trust Amazon `dealDetails`/`WAS_PRICE`;
->   advertise the conservative `min(Keepa-derived, Amazon-attested)`; only trust a Keepa-only
+>   advertise the conservative `min(Keepa-derived, Amazon-verified)`; only trust a Keepa-only
 >   magnitude when the baseline is stable (`outOfStockPercentage90` low, avg30≈avg90≈avg180).
->   Caveat from the run: trustworthy attestation was rare (1 of 10 items), and `savings` on a
+>   Caveat from the run: trustworthy verification was rare (1 of 10 items), and `savings` on a
 >   `LIST_PRICE` basis (3 of 4 with savings) is as untrustworthy as the Keepa number.
 > - **Multiple listings of different conditions return, and the cheapest is NOT the
 >   buy box** — pick `isBuyBoxWinner === true`, never `listings[0]`/min-price.
@@ -323,8 +323,8 @@ affiliate link we post is the one this API returns, not a hand-built URL.
   - **Magnitude gate (per exp09):** do NOT take the advertised "% off" from Keepa's `avg90`
     (polluted) or from `Savings` on a `LIST_PRICE` basis (gameable). The trustworthy magnitude is
     `DealDetails` present and/or `SavingBasisType == "WAS_PRICE"`. Advertise the conservative
-    `min(Keepa-derived, Amazon-attested)`, and trust a Keepa-only drop only when the baseline is
-    stable (`outOfStockPercentage90` low, avg30≈avg90≈avg180). Whether Amazon attestation is a
+    `min(Keepa-derived, Amazon-verified)`, and trust a Keepa-only drop only when the baseline is
+    stable (`outOfStockPercentage90` low, avg30≈avg90≈avg180). Whether Amazon verification is a
     *hard* publish gate or a *bonus* is the open product decision in `product.md`.
   - **Cents at the boundary:** `Price.Money.Amount` is a decimal (e.g. `8.7`); convert to integer
     cents (`intval(round($amount * 100))`) before comparing to the Keepa-cents baseline. Never

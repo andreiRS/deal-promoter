@@ -45,9 +45,9 @@ final class RunCycleCommand extends Command
 
     /**
      * @param int $pagesPerCycle number of Keepa `/deal` pages fetched per Cycle.
-     *                           Every price-valid survivor across those pages is
-     *                           recorded; Amazon attestation is a per-deal marker,
-     *                           not a record gate.
+     *                           Only price-valid survivors that are Amazon-verified
+     *                           are recorded; the rest are dropped by the record
+     *                           gate below.
      */
     public function __construct(
         private readonly KeepaDiscovery $discovery,
@@ -148,7 +148,7 @@ final class RunCycleCommand extends Command
 
             // 4. Live Snapshot for this page's surviving ASINs. A survivor absent
             //    from the map is skipped; a snapshot confirms Price Validity but
-            //    only an Amazon-attested one (dealDetails / WAS_PRICE) is recorded.
+            //    only an Amazon-verified one (dealDetails / WAS_PRICE) is recorded.
             $asins = array_map(static fn (Candidate $c): string => $c->asin, $survivors);
             $snapshots = [] === $asins ? [] : $this->creators->fetchSnapshots(...$asins);
             $io->writeln(
@@ -156,9 +156,9 @@ final class RunCycleCommand extends Command
                 OutputInterface::VERBOSITY_VERBOSE,
             );
 
-            // 5. Record one FoundDeal per Amazon-attested survivor. A snapshot
-            //    confirms Price Validity; the attestation gate below then drops
-            //    any survivor without Amazon attestation (dealDetails / WAS_PRICE)
+            // 5. Record one FoundDeal per Amazon-verified survivor. A snapshot
+            //    confirms Price Validity; the verification gate below then drops
+            //    any survivor that is not Amazon-verified (dealDetails / WAS_PRICE)
             //    so it is never recorded, shown, or published.
             foreach ($survivors as $candidate) {
                 $seenAsins[$candidate->asin] = true;
@@ -168,10 +168,10 @@ final class RunCycleCommand extends Command
                 }
                 ++$snapshottedCount;
 
-                // Attestation gate: only Amazon-attested deals are recorded.
-                // Unattested snapshots are dropped here and never reach the
+                // Verification gate: only Amazon-verified deals are recorded.
+                // Unverified snapshots are dropped here and never reach the
                 // Review page, the verbose table, or publish.
-                if (!$snapshot->hasAmazonAttestation()) {
+                if (!$snapshot->isAmazonVerified()) {
                     continue;
                 }
 
@@ -183,7 +183,8 @@ final class RunCycleCommand extends Command
                     $snapshot->availability ?? '—',
                     $snapshot->savingBasisType ?? '—',
                     $snapshot->hasDealDetails ? 'yes' : 'no',
-                    $snapshot->hasAmazonAttestation() ? '<info>✓ attested</info>' : '<comment>— unattested</comment>',
+                    // Always verified here: the gate above dropped the rest.
+                    '<info>✓ verified</info>',
                 ];
             }
 
@@ -198,8 +199,8 @@ final class RunCycleCommand extends Command
             }
         }
 
-        // Every recorded deal is Amazon-attested by construction (the gate in the
-        // record loop drops the rest), so recorded count == attested count.
+        // Every recorded deal is Amazon-verified by construction (the gate in the
+        // record loop drops the rest), so recorded count == verified count.
         $foundCount = \count($cycleRun->getFoundDeals());
         $this->reportSnapshots($io, $snapshotRows);
 
@@ -216,7 +217,7 @@ final class RunCycleCommand extends Command
         $this->entityManager->flush();
 
         $io->success(\sprintf(
-            'Cycle complete: %d page(s) searched — %d raw, %d surviving, %d snapshotted, %d Amazon-attested deals recorded.',
+            'Cycle complete: %d page(s) searched — %d raw, %d surviving, %d snapshotted, %d Amazon-verified deals recorded.',
             $pagesFetched,
             $rawCount,
             $survivingCount,
@@ -254,9 +255,9 @@ final class RunCycleCommand extends Command
     }
 
     /**
-     * Verbose-only: one row per recorded deal showing the attestation signals
-     * (savingBasis + dealDetails). Only Amazon-attested survivors reach this
-     * table — unattested snapshots are dropped by the gate in the record loop
+     * Verbose-only: one row per recorded deal showing the verification signals
+     * (savingBasis + dealDetails). Only Amazon-verified survivors reach this
+     * table — unverified snapshots are dropped by the gate in the record loop
      * before a row is built, so they never appear here or in the DB.
      *
      * @param list<array{string, string, string, string, string, string}> $rows
@@ -268,7 +269,7 @@ final class RunCycleCommand extends Command
         }
 
         $io->table(
-            ['ASIN', 'Price', 'Availability', 'SavingBasis', 'DealDetails', 'Attestation'],
+            ['ASIN', 'Price', 'Availability', 'SavingBasis', 'DealDetails', 'Verified'],
             $rows,
         );
     }

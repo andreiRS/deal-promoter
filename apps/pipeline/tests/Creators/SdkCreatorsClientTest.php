@@ -34,7 +34,7 @@ final class SdkCreatorsClientTest extends TestCase
         self::assertSame(2499, $snap->priceCents, 'buy-box winner is 24,99 €, not the cheaper 24,49 €');
     }
 
-    public function testMapsAllAttestationFieldsFromTheBuyBoxListing(): void
+    public function testMapsAllVerificationFieldsFromTheBuyBoxListing(): void
     {
         $client = $this->clientReturning($this->fixtureResponse(), ['B08B45VD31', 'B0010AH4BW']);
 

@@ -31,7 +31,7 @@ final readonly class SdkCreatorsClient implements CreatorsClient
     private const int HTTP_TOO_MANY_REQUESTS = 429;
 
     /**
-     * The OffersV2 resources we need for the attestation snapshot. Without these
+     * The OffersV2 resources we need for the verification snapshot. Without these
      * the listings come back without price/availability/condition/merchant.
      *
      * @var list<string>

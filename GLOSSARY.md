@@ -14,13 +14,13 @@ The check that suppresses a raw [Candidate](#candidate) we have already posted, 
 
 One of the rejection checks a raw candidate must clear, alongside the [Pre-filter](#pre-filter). The Guard is the *mechanism*; the [Repost Policy](#repost-policy) is the *rule* it enforces.
 
-## Amazon Attestation
+## Amazon-Verified
 
 Amazon's own evidence that a discount is real, read off the [Live Snapshot](#live-snapshot): `dealDetails` (a deal badge + window) **or** a `savingBasis` whose type is `WAS_PRICE` (Amazon's recent actual selling price). Either signal alone counts.
 
-Distinct from a `LIST_PRICE` basis, which is the seller-set MSRP and gameable, so it is **not** attestation. Attestation and our own [Recorded Price History](#recorded-price-history) are the only trustworthy sources of [Discount Magnitude](#discount-magnitude); attestation is rare (~1 in 10 snapshotted items).
+Distinct from a `LIST_PRICE` basis, which is the seller-set MSRP and gameable, so it does **not** make a deal Amazon-verified. Amazon-verification and our own [Recorded Price History](#recorded-price-history) are the only trustworthy sources of [Discount Magnitude](#discount-magnitude); it is rare (~1 in 10 snapshotted items).
 
-A **per-deal marker, not a gate.** Every price-valid survivor in a [Cycle](#cycle) is recorded regardless of attestation; attested ones are simply flagged (a green "✓ Amazon-attested" badge on the review page). Attestation once decided which survivors were recorded at all — that record-gate was removed, leaving it a trust/quality signal only.
+A **record gate.** In a [Cycle](#cycle) a survivor whose [Live Snapshot](#live-snapshot) is not Amazon-verified is dropped and never recorded, shown, or published; only Amazon-verified survivors are recorded. Every recorded deal is Amazon-verified by construction, and each carries a green "✓ Amazon-verified" badge on the review page.
 
 ## Buy Box
 
@@ -64,7 +64,7 @@ The headless, scheduled process that runs a [Cycle](#cycle) end to end. The firs
 
 ## Discount Magnitude
 
-*How big* a price drop is ("% off"). Always measured against a [Reference Price](#reference-price), so it is only as trustworthy as that reference. Trustworthy only via [Amazon Attestation](#amazon-attestation) or our own [Recorded Price History](#recorded-price-history).
+*How big* a price drop is ("% off"). Always measured against a [Reference Price](#reference-price), so it is only as trustworthy as that reference. Trustworthy only via [Amazon-Verified](#amazon-verified) or our own [Recorded Price History](#recorded-price-history).
 
 The counterpart to [Price Validity](#price-validity): a [Live Snapshot](#live-snapshot) proves validity but **cannot** prove magnitude.
 
@@ -76,7 +76,7 @@ Distinct from the [Deal Pipeline](#deal-pipeline), which decides *what* and *whe
 
 ## Live Snapshot
 
-The live Creators API call (`GetItems` with `OffersV2`) taken for a surviving [Candidate](#candidate) immediately before publish, and the bundle of facts it returns: live [Buy Box](#buy-box) price, availability, condition, merchant, and any [Amazon Attestation](#amazon-attestation). Carries **no verdict** — it only reports the current truth.
+The live Creators API call (`GetItems` with `OffersV2`) taken for a surviving [Candidate](#candidate) immediately before publish, and the bundle of facts it returns: live [Buy Box](#buy-box) price, availability, condition, merchant, and any [Amazon-Verified](#amazon-verified) signal. Carries **no verdict** — it only reports the current truth.
 
 Establishes [Price Validity](#price-validity) only; the [Deal Gate](#deal-gate) reads the Snapshot to decide. The non-negotiable rule: **never publish a price you have not just re-confirmed with a fresh Live Snapshot.**
 
@@ -134,7 +134,7 @@ The prices we ourselves logged at publish time, accumulated across [Cycles](#cyc
 
 ## Reference Price
 
-The price a [Discount Magnitude](#discount-magnitude) is measured against (the "was" price). Every source is reliable to a different degree: a Keepa average is [Price-Outlier](#outlier-guards)-pollutable, an Amazon `LIST_PRICE` is gameable MSRP, an Amazon `WAS_PRICE` / `dealDetails` ([Amazon Attestation](#amazon-attestation)) is trustworthy, and our own [Recorded Price History](#recorded-price-history) is the most trustworthy.
+The price a [Discount Magnitude](#discount-magnitude) is measured against (the "was" price). Every source is reliable to a different degree: a Keepa average is [Price-Outlier](#outlier-guards)-pollutable, an Amazon `LIST_PRICE` is gameable MSRP, an Amazon `WAS_PRICE` / `dealDetails` ([Amazon-Verified](#amazon-verified)) is trustworthy, and our own [Recorded Price History](#recorded-price-history) is the most trustworthy.
 
 A Reference Price establishes magnitude, never [Price Validity](#price-validity).
 

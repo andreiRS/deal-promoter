@@ -278,12 +278,12 @@ class FoundDeal implements PublishableDeal
 
     /**
      * Amazon's own evidence that the discount is real: a `dealDetails` badge/window
-     * OR a `savingBasis` of type `WAS_PRICE`. Mirrors LiveSnapshot::hasAmazonAttestation
+     * OR a `savingBasis` of type `WAS_PRICE`. Mirrors LiveSnapshot::isAmazonVerified
      * over the columns snapshotted onto this row. A `LIST_PRICE` basis is seller-set
-     * MSRP and does NOT count. Surfaced as a marker on the Review page; no longer gates
-     * recording.
+     * MSRP and does NOT count. Every recorded deal is Amazon-verified by construction
+     * (the record gate drops the rest); surfaced as a green badge on the Review page.
      */
-    public function hasAmazonAttestation(): bool
+    public function isAmazonVerified(): bool
     {
         return true === $this->hasDealDetails || 'WAS_PRICE' === $this->savingBasisType;
     }
