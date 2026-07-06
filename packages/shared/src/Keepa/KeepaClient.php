@@ -86,7 +86,13 @@ final class KeepaClient implements KeepaDiscovery
             'deltaPercentRange' => [20, 100],
             'sortType' => self::SORT_PERCENT_DELTA,
             'filterErotic' => true,
-            'isFilterEnabled' => false,
+            // Bias discovery toward deals that can attest: "sold and fulfilled by
+            // Amazon" is a precondition for an Amazon WAS_PRICE / dealDetails, so
+            // requiring it raises the attested hit-rate and cuts wasted Live
+            // Snapshot calls. It is NOT attestation itself — the Live Snapshot
+            // still has the final say (see RunCycleCommand's attestation gate).
+            'mustHaveAmazonOffer' => true,
+            'isFilterEnabled' => true, // required for mustHaveAmazonOffer to apply
         ];
     }
 }

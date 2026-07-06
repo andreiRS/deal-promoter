@@ -55,5 +55,9 @@ final class KeepaClientTest extends TestCase
         self::assertStringContainsString('key=secret-key', $captured['url']);
         // selection is a URL-encoded JSON blob carrying the domain id.
         self::assertStringContainsString('domainId%22:3', $captured['url']);
+        // Discovery is biased to Amazon-sold offers (attestation precondition),
+        // which requires the filter block to be enabled.
+        self::assertStringContainsString('mustHaveAmazonOffer%22:true', $captured['url']);
+        self::assertStringContainsString('isFilterEnabled%22:true', $captured['url']);
     }
 }
