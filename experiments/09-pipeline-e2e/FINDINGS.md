@@ -32,9 +32,9 @@ The Deal Gate we built (the spec's leading option) measures the drop as **live p
 | B00R13CIAY (STARWAX) | 8,70 € | **80% off** | `savingBasis` 9,85 € → **12% off**, `WAS_PRICE`, deal badge present |
 | B0D2LQ9VY2 (Tücher) | 9,15 € | **84% off** | **no `savingBasis`, no `savings`, no `dealDetails`** — Amazon flags no deal at all |
 
-Counting Amazon Attestation across all 10 snapshotted items makes the trust problem stark:
+Counting Amazon-Verified across all 10 snapshotted items makes the trust problem stark:
 
-| Attestation | count | trustworthy? |
+| Verification | count | trustworthy? |
 |-------------|-------|--------------|
 | `dealDetails` present (real deal badge) | **1** (WAS_PRICE, 12% real) | yes |
 | `savings` present but `LIST_PRICE` basis | 3 (claiming 81 / 85 / 88% off MSRP) | **no — gameable MSRP** |
@@ -51,14 +51,14 @@ risk). The Live Snapshot backstops Price Validity — it does **nothing** for **
 because the headline "% off" always rests on a Reference Price, and Keepa's is the polluted one.
 
 **In PHP, do this:** treat Keepa's `avg90` as a *discovery/ranking* Reference Price only, never as
-the published discount. For the advertised "% off", trust **Amazon Attestation** from the same
+the published discount. For the advertised "% off", trust **Amazon-Verified** from the same
 `GetItems` call we already pay for — see §2. Concretely, require corroboration before posting a
 big discount: e.g. publish the **conservative** `min(keepaDrop, amazonSavingsPct)`, and require
 `dealDetails` present (or `savings` present with `savingBasisType === WAS_PRICE`) before claiming
 any headline %. Items with no Amazon deal signal at all (Tücher) should post without a "% off"
 claim, or be skipped. This costs **zero** extra calls — it's a re-read of fields already fetched.
 
-> Open question for Andrei: should the Deal Gate **require** Amazon Attestation (`dealDetails` /
+> Open question for Andrei: should the Deal Gate **require** Amazon-Verified (`dealDetails` /
 > `savings`) to publish, promoting it from the spec's "bonus signal" to a hard gate? That trades
 > volume for trust. It does NOT need the deep `/product` stage we dropped — the fix is in the
 > Creators fields, so the minimum-steps shape still holds.
@@ -71,7 +71,7 @@ exp08 concluded `savingBasis` is always the gameable `LIST_PRICE` (MSRP). **Refu
 exp09 saw `savingBasisType: "WAS_PRICE"` (B00R13CIAY) — Amazon's *recent actual* selling price,
 a far more trustworthy Reference Price than both `LIST_PRICE` and Keepa's polluted `avg90`.
 
-**In PHP:** read `savingBasisType` and weight it — `WAS_PRICE` is **Amazon Attestation** (trustworthy);
+**In PHP:** read `savingBasisType` and weight it — `WAS_PRICE` is **Amazon-Verified** (trustworthy);
 `LIST_PRICE` is not. This is the field that makes §1's fix work.
 
 ---

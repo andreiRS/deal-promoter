@@ -119,9 +119,9 @@ final class RunCycleCommandTest extends KernelTestCase
 
         // Pick two known surviving ASINs (golden set) and return snapshots for them
         // only — a third surviving ASIN with no snapshot must be skipped silently.
-        // A is Amazon-attested (dealDetails + WAS_PRICE); B is a valid snapshot with
-        // NO attestation. Both are price-valid survivors and both are snapshotted,
-        // but the attestation gate records only A — B is dropped.
+        // A is Amazon-verified (dealDetails + WAS_PRICE); B is a valid snapshot with
+        // NO verification. Both are price-valid survivors and both are snapshotted,
+        // but the verification gate records only A — B is dropped.
         $snapshotA = new LiveSnapshot(
             asin: '019085894X',
             priceCents: 1234,
@@ -157,13 +157,13 @@ final class RunCycleCommandTest extends KernelTestCase
         self::assertSame(Command::SUCCESS, $exit);
         self::assertSame(1, $this->countCycleRuns());
 
-        // Verbose output shows the recorded (attested) deal A only. The
-        // unattested survivor B is dropped by the gate, so it never appears in
+        // Verbose output shows the recorded (verified) deal A only. The
+        // unverified survivor B is dropped by the gate, so it never appears in
         // the snapshot table.
         $display = $tester->getDisplay();
         self::assertStringContainsString('Live Snapshot:', $display);
         self::assertStringContainsString('019085894X', $display);
-        self::assertStringContainsString('attested', $display);
+        self::assertStringContainsString('verified', $display);
         self::assertStringNotContainsString('B0010AH4BW', $display);
 
         // Reload the single CycleRun from the DB.
@@ -174,12 +174,12 @@ final class RunCycleCommandTest extends KernelTestCase
         // 93 golden survivors clear Pre-filter + (empty) Already-Posted Guard.
         self::assertSame(93, $cycleRun->getSurvivingCount());
         // Both survivors were snapshotted (Price Validity); the funnel counts
-        // both even though only the attested one is recorded.
+        // both even though only the verified one is recorded.
         self::assertSame(2, $cycleRun->getSnapshottedCount());
         self::assertNotNull($cycleRun->getFinishedAt());
 
         $deals = $cycleRun->getFoundDeals();
-        // Only the Amazon-attested survivor A is recorded; unattested B is dropped.
+        // Only the Amazon-verified survivor A is recorded; unverified B is dropped.
         self::assertCount(1, $deals);
 
         $byAsin = [];
@@ -188,7 +188,7 @@ final class RunCycleCommandTest extends KernelTestCase
         }
         self::assertArrayHasKey('019085894X', $byAsin);
         self::assertArrayNotHasKey('B0010AH4BW', $byAsin);
-        self::assertTrue($byAsin['019085894X']->hasAmazonAttestation());
+        self::assertTrue($byAsin['019085894X']->isAmazonVerified());
 
         $a = $byAsin['019085894X'];
         // Money is integer cents from the snapshot.
@@ -225,19 +225,19 @@ final class RunCycleCommandTest extends KernelTestCase
         self::assertFalse(property_exists($a, 'verdict'));
     }
 
-    public function testPaginatesAcrossPagesAndRecordsAttestedSurvivors(): void
+    public function testPaginatesAcrossPagesAndRecordsVerifiedSurvivors(): void
     {
         // One survivor per page; the per-page yield is below the target, so the
-        // Cycle walks from page 0 to page 1. Page 0's survivor is unattested and
-        // page 1's is attested — the gate drops page 0 and records page 1, which
+        // Cycle walks from page 0 to page 1. Page 0's survivor is unverified and
+        // page 1's is verified — the gate drops page 0 and records page 1, which
         // also proves the walk reached page 1.
         $discovery = new FakeKeepaDiscovery([
             new DealPage([$this->passingCandidate('PAGE0AAAAA')], new TokenMeter(60, 5, 5, 0)),
             new DealPage([$this->passingCandidate('PAGE1BBBBB')], new TokenMeter(60, 5, 5, 0)),
         ]);
         $creators = new FakeCreatorsClient([
-            'PAGE0AAAAA' => $this->snapshot('PAGE0AAAAA', attested: false),
-            'PAGE1BBBBB' => $this->snapshot('PAGE1BBBBB', attested: true),
+            'PAGE0AAAAA' => $this->snapshot('PAGE0AAAAA', verified: false),
+            'PAGE1BBBBB' => $this->snapshot('PAGE1BBBBB', verified: true),
         ]);
 
         // A permissive Pre-filter so the synthetic candidates survive regardless
@@ -251,7 +251,7 @@ final class RunCycleCommandTest extends KernelTestCase
         self::assertInstanceOf(CycleRun::class, $cycleRun);
 
         // Both pages were searched and both survivors were snapshotted, but only
-        // the attested page-1 survivor became a found deal.
+        // the verified page-1 survivor became a found deal.
         self::assertSame(2, $cycleRun->getRawCount());
         self::assertSame(2, $cycleRun->getSurvivingCount());
         self::assertSame(2, $cycleRun->getSnapshottedCount());
@@ -261,7 +261,7 @@ final class RunCycleCommandTest extends KernelTestCase
             $byAsin[$deal->getAsin()] = $deal;
         }
         self::assertSame(['PAGE1BBBBB'], array_keys($byAsin));
-        self::assertTrue($byAsin['PAGE1BBBBB']->hasAmazonAttestation());
+        self::assertTrue($byAsin['PAGE1BBBBB']->isAmazonVerified());
 
         // Verbose output shows the walk reached page 1.
         self::assertStringContainsString('page 1', $tester->getDisplay());
@@ -278,10 +278,10 @@ final class RunCycleCommandTest extends KernelTestCase
             new DealPage([$this->passingCandidate('PAGE03AAAA')], new TokenMeter(60, 5, 5, 0)),
         ]);
         $creators = new FakeCreatorsClient([
-            'PAGE00AAAA' => $this->snapshot('PAGE00AAAA', attested: true),
-            'PAGE01AAAA' => $this->snapshot('PAGE01AAAA', attested: true),
-            'PAGE02AAAA' => $this->snapshot('PAGE02AAAA', attested: true),
-            'PAGE03AAAA' => $this->snapshot('PAGE03AAAA', attested: true),
+            'PAGE00AAAA' => $this->snapshot('PAGE00AAAA', verified: true),
+            'PAGE01AAAA' => $this->snapshot('PAGE01AAAA', verified: true),
+            'PAGE02AAAA' => $this->snapshot('PAGE02AAAA', verified: true),
+            'PAGE03AAAA' => $this->snapshot('PAGE03AAAA', verified: true),
         ]);
         $preFilter = new PreFilter(new Criteria(), new GuardThresholds());
 
@@ -308,7 +308,7 @@ final class RunCycleCommandTest extends KernelTestCase
             new DealPage([$this->passingCandidate('ENDPAGE0AA')], new TokenMeter(60, 5, 5, 0)),
         ]);
         $creators = new FakeCreatorsClient([
-            'ENDPAGE0AA' => $this->snapshot('ENDPAGE0AA', attested: true),
+            'ENDPAGE0AA' => $this->snapshot('ENDPAGE0AA', verified: true),
         ]);
 
         $this->command($discovery, $creators, new PreFilter(new Criteria(), new GuardThresholds()))->execute([]);
@@ -340,7 +340,7 @@ final class RunCycleCommandTest extends KernelTestCase
         );
     }
 
-    private function snapshot(string $asin, bool $attested): LiveSnapshot
+    private function snapshot(string $asin, bool $verified): LiveSnapshot
     {
         return new LiveSnapshot(
             asin: $asin,
@@ -348,9 +348,9 @@ final class RunCycleCommandTest extends KernelTestCase
             availability: 'IN_STOCK',
             condition: 'New',
             merchantId: 'AMZN-DE',
-            savingsPercent: $attested ? 30 : null,
-            savingBasisType: $attested ? 'WAS_PRICE' : 'LIST_PRICE',
-            hasDealDetails: $attested,
+            savingsPercent: $verified ? 30 : null,
+            savingBasisType: $verified ? 'WAS_PRICE' : 'LIST_PRICE',
+            hasDealDetails: $verified,
             violatesMap: false,
             detailPageUrl: \sprintf('https://www.amazon.de/dp/%s?tag=t-21&linkCode=ogi', $asin),
         );

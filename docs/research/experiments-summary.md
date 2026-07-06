@@ -6,7 +6,7 @@ experiment set out to answer and what we actually proved against live amazon.de.
 Per-experiment detail lives in each `experiments/NN-*/FINDINGS.md`; backing briefs are
 [`keepa.md`](keepa.md) and [`creators-api.md`](creators-api.md). Canonical terms
 (Pre-filter, Outlier Guards, Price Outlier, Live Snapshot, Deal Gate, Reference Price,
-Amazon Attestation, Price Validity, Discount Magnitude) are defined in
+Amazon-Verified, Price Validity, Discount Magnitude) are defined in
 [`../../GLOSSARY.md`](../../GLOSSARY.md).
 
 The pipeline (see [`../specs/product.md`](../specs/product.md)): **Keepa** does cheap,
@@ -123,12 +123,12 @@ live Creators snapshot → a branded HTML table. The handoff works and the affil
   actual selling price, the one trustworthy Reference Price for magnitude. But of 10 validated items
   only **4** carried `savings`, and **3 of those 4 were `LIST_PRICE`** (gameable MSRP, claiming
   81–88%); only **1** had `dealDetails` + `WAS_PRICE`. So "require Amazon `savings`" is NOT a fix;
-  only `dealDetails`/`WAS_PRICE` (i.e. **Amazon Attestation**) are trustworthy, and they were rare
+  only `dealDetails`/`WAS_PRICE` (i.e. **Amazon-Verified**) are trustworthy, and they were rare
   (1 of 10) on this page.
-- **The fix (≈free, no extra call):** trust **Amazon Attestation** (`dealDetails` +
+- **The fix (≈free, no extra call):** trust **Amazon-Verified** (`dealDetails` +
   `savingBasisType == WAS_PRICE`) for the advertised %, treat Keepa as discovery/ranking only,
   advertise the conservative `min(keepa, amazon)`, and require a stable Keepa Reference Price
-  (`outOfStockPercentage90` low, avg30≈avg90≈avg180) when Amazon attests nothing. The durable fix
+  (`outOfStockPercentage90` low, avg30≈avg90≈avg180) when Amazon verifies nothing. The durable fix
   is the spec's own `record` step: once we log live prices each cycle, our own Recorded Price History
   is the un-gameable Reference Price.
 - **No deep `/product?stats` stage:** dropped on purpose. It would not catch the above (the Live
@@ -151,7 +151,7 @@ live Creators snapshot → a branded HTML table. The handoff works and the affil
   single rule is why the funnel ends in a Live Snapshot before publish.
 - **The Live Snapshot proves Price Validity, not Discount Magnitude (exp09).** The "% off"
   always rests on a Reference Price, and every one we have is gameable or pollutable: Keepa avg90
-  is Price-Outlier-polluted, Amazon `LIST_PRICE` is gameable MSRP. Only Amazon Attestation
+  is Price-Outlier-polluted, Amazon `LIST_PRICE` is gameable MSRP. Only Amazon-Verified
   (`dealDetails` + `WAS_PRICE`) is trustworthy, and it is rare. Advertise the conservative
   cross-source minimum; the durable Reference Price is our own Recorded Price History once the
   `record` step exists.

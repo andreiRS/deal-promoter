@@ -88,7 +88,7 @@ services:
 
     # --- Cycle pagination (P7) ---
     # A cycle sweeps a fixed batch of /deal pages and records every price-valid
-    # survivor; attestation is a per-deal marker. Tune the volume-vs-cost dial here.
+    # survivor that is Amazon-verified. Tune the volume-vs-cost dial here.
     App\Command\RunCycleCommand:
         arguments:
             $pagesPerCycle: 2 # number of /deal pages fetched per cycle

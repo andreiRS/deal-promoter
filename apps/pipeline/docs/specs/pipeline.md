@@ -23,7 +23,7 @@ A single Symfony Console command, `app:run-cycle`, runs one Cycle end to end:
 
 No [Deal Gate](../../../../GLOSSARY.md) verdict is applied this session. The command records raw signals only; the publish-vs-skip dial is deferred until real rows can be eyeballed.
 
-A minimal local web page (Symfony, served by the built-in server in the same container) reads the **latest** Cycle from Postgres and renders its found deals as a review table: per-row title, image, price, Keepa %, Amazon `savings` + `savingBasisType`, attestation flags, validity facts, and the affiliate link. Each row carries a **Publish button** that is a stub: it calls a `ChannelPublisher` interface whose only implementation logs/marks intent, providing the seam the future WhatsApp container wires into.
+A minimal local web page (Symfony, served by the built-in server in the same container) reads the **latest** Cycle from Postgres and renders its found deals as a review table: per-row title, image, price, Keepa %, Amazon `savings` + `savingBasisType`, verification flags, validity facts, and the affiliate link. Each row carries a **Publish button** that is a stub: it calls a `ChannelPublisher` interface whose only implementation logs/marks intent, providing the seam the future WhatsApp container wires into.
 
 Integration clients live in `packages/shared`: a **hand-rolled Keepa client** (ported from `experiments/lib/keepa.ts`; no official SDK exists) and a `CreatorsClient` interface whose implementation wraps the **official Amazon Creators PHP SDK v1.2.0** (vendored as a Composer `path` repository). The wrapper keeps the pipeline depending on our own domain types, not the SDK's generated models.
 
@@ -36,7 +36,7 @@ Integration clients live in `packages/shared`: a **hand-rolled Keepa client** (p
 - As the operator, I can define Criteria (discount %, price band, sales rank, categories, rating) in editable config so tuning thresholds needs no code change.
 - As the system, I apply the Outlier Guards on the free Keepa payload to reject Price Outliers before any paid call.
 - As the system, I suppress already-posted ASINs against Recorded Price History through a storage interface.
-- As the system, I take a Live Snapshot of every surviving candidate via the official Creators SDK (batched 10/call, configurable cap) for live price, availability, condition, merchant, savings, and attestation.
+- As the system, I take a Live Snapshot of every surviving candidate via the official Creators SDK (batched 10/call, configurable cap) for live price, availability, condition, merchant, savings, and verification.
 - As the system, I record every found deal of a Cycle (Keepa signals + snapshot facts + raw discount signals) to Postgres.
 - As the operator, I can open a local web page that lists the latest Cycle's found deals with their raw signals and affiliate links, so I can judge deal quality.
 - As the operator, I see a Publish button per deal that calls a stubbed `ChannelPublisher` seam, so the future WhatsApp container has a defined hook.
@@ -75,6 +75,6 @@ Integration clients live in `packages/shared`: a **hand-rolled Keepa client** (p
 
 ## Open Questions / Risks
 
-- **Deal Gate dial (deferred, not resolved).** Strict (Amazon Attestation only) vs Loose (price drop) vs Middle (trust-tiered, advertise conservative `min(keepa, amazon)`, headline % only on Attestation). Decide next session after reviewing real recorded rows. The persistently-polluted Keepa `avg90` and the gameable Amazon `LIST_PRICE` mean only Amazon Attestation (`dealDetails` / `WAS_PRICE`) gives a trustworthy Discount Magnitude — rare (~1/10 in exp09).
+- **Deal Gate dial (deferred, not resolved).** Strict (Amazon-Verified only) vs Loose (price drop) vs Middle (trust-tiered, advertise conservative `min(keepa, amazon)`, headline % only on Verification). Decide next session after reviewing real recorded rows. The persistently-polluted Keepa `avg90` and the gameable Amazon `LIST_PRICE` mean only Amazon-Verified (`dealDetails` / `WAS_PRICE`) gives a trustworthy Discount Magnitude — rare (~1/10 in exp09).
 - **Snapshot cap default (unlimited)** is fine on the entry token tier for normal feeds, but a pathological survivor count would fan out GetItems calls; the configurable cap is the throttle.
 - **Official SDK ergonomics.** The SDK is OpenAPI-generated and verbose, and depends on Guzzle 7 (the app otherwise uses Symfony HttpClient). Both are isolated behind the `CreatorsClient` wrapper, but the vendored `path`-repo setup must keep Docker builds offline-reproducible.

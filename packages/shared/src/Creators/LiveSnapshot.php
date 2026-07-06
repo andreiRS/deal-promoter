@@ -6,7 +6,7 @@ namespace DealPromoter\Shared\Creators;
 
 /**
  * A live, buy-box offer snapshot for one ASIN, taken from the Amazon CreatorsAPI
- * GetItems response at attestation time. Maps 1:1 onto P2's `found_deal`
+ * GetItems response at snapshot time. Maps 1:1 onto P2's `found_deal`
  * snapshot columns.
  *
  * Money is integer euro-cents: the boundary converts the API's decimal-euro
@@ -36,10 +36,10 @@ final readonly class LiveSnapshot
      * Amazon's own evidence that a discount is real: a `dealDetails` badge/window
      * OR a `savingBasis` of type `WAS_PRICE` (Amazon's recent actual selling
      * price). Either signal alone counts. A `LIST_PRICE` basis is seller-set MSRP,
-     * gameable, and so is NOT attestation. The only trustworthy on-snapshot source
-     * of Discount Magnitude; rare (~1 in 10 snapshotted items).
+     * gameable, and so is NOT Amazon-verified. The only trustworthy on-snapshot
+     * source of Discount Magnitude; rare (~1 in 10 snapshotted items).
      */
-    public function hasAmazonAttestation(): bool
+    public function isAmazonVerified(): bool
     {
         return $this->hasDealDetails || 'WAS_PRICE' === $this->savingBasisType;
     }

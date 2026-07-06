@@ -10,8 +10,8 @@ use PHPUnit\Framework\TestCase;
 final class LiveSnapshotTest extends TestCase
 {
     /**
-     * @return LiveSnapshot a baseline price-valid snapshot with NO attestation;
-     *                      callers override the two attestation signals
+     * @return LiveSnapshot a baseline price-valid snapshot with NO verification;
+     *                      callers override the two verification signals
      */
     private function snapshot(bool $hasDealDetails, ?string $savingBasisType): LiveSnapshot
     {
@@ -29,24 +29,24 @@ final class LiveSnapshotTest extends TestCase
         );
     }
 
-    public function testDealDetailsAloneCountsAsAttestation(): void
+    public function testDealDetailsAloneCountsAsVerified(): void
     {
-        self::assertTrue($this->snapshot(true, null)->hasAmazonAttestation());
+        self::assertTrue($this->snapshot(true, null)->isAmazonVerified());
     }
 
-    public function testWasPriceBasisAloneCountsAsAttestation(): void
+    public function testWasPriceBasisAloneCountsAsVerified(): void
     {
-        self::assertTrue($this->snapshot(false, 'WAS_PRICE')->hasAmazonAttestation());
+        self::assertTrue($this->snapshot(false, 'WAS_PRICE')->isAmazonVerified());
     }
 
-    public function testListPriceBasisIsNotAttestation(): void
+    public function testListPriceBasisIsNotVerified(): void
     {
-        // Seller-set MSRP is gameable, so a LIST_PRICE basis is not attestation.
-        self::assertFalse($this->snapshot(false, 'LIST_PRICE')->hasAmazonAttestation());
+        // Seller-set MSRP is gameable, so a LIST_PRICE basis is not Amazon-verified.
+        self::assertFalse($this->snapshot(false, 'LIST_PRICE')->isAmazonVerified());
     }
 
-    public function testNeitherSignalIsNotAttestation(): void
+    public function testNeitherSignalIsNotVerified(): void
     {
-        self::assertFalse($this->snapshot(false, null)->hasAmazonAttestation());
+        self::assertFalse($this->snapshot(false, null)->isAmazonVerified());
     }
 }

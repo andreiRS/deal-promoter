@@ -14,8 +14,8 @@ use Psr\Cache\CacheItemPoolInterface;
  * fetched. A transparent decorator over the real {@see KeepaDiscovery}.
  *
  * Within the TTL a page is served from cache (0 Keepa tokens), so a Cycle that
- * paginates spends tokens only on genuinely new, deeper pages until its attested
- * target is met. After the TTL the early pages refetch, so fresh top deals still
+ * paginates spends tokens only on genuinely new, deeper pages until its
+ * Amazon-verified target is met. After the TTL the early pages refetch, so fresh top deals still
  * surface — the TTL is the freshness-vs-token-cost dial.
  *
  * One marketplace runs today (amazon.de) with a fixed `/deal` selection, so the
