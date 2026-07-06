@@ -156,10 +156,10 @@ final class RunCycleCommand extends Command
                 OutputInterface::VERBOSITY_VERBOSE,
             );
 
-            // 5. Record one FoundDeal per price-valid survivor. Amazon attestation
-            //    (dealDetails / WAS_PRICE) no longer gates recording — every
-            //    snapshotted survivor is recorded and attestation rides along as a
-            //    per-deal marker surfaced on the Review page.
+            // 5. Record one FoundDeal per Amazon-attested survivor. A snapshot
+            //    confirms Price Validity; the attestation gate below then drops
+            //    any survivor without Amazon attestation (dealDetails / WAS_PRICE)
+            //    so it is never recorded, shown, or published.
             foreach ($survivors as $candidate) {
                 $seenAsins[$candidate->asin] = true;
                 $snapshot = $snapshots[$candidate->asin] ?? null;
@@ -167,6 +167,13 @@ final class RunCycleCommand extends Command
                     continue;
                 }
                 ++$snapshottedCount;
+
+                // Attestation gate: only Amazon-attested deals are recorded.
+                // Unattested snapshots are dropped here and never reach the
+                // Review page, the verbose table, or publish.
+                if (!$snapshot->hasAmazonAttestation()) {
+                    continue;
+                }
 
                 $cycleRun->addFoundDeal(FoundDeal::fromSnapshot($candidate, $snapshot, $startedAt));
 
@@ -191,13 +198,9 @@ final class RunCycleCommand extends Command
             }
         }
 
+        // Every recorded deal is Amazon-attested by construction (the gate in the
+        // record loop drops the rest), so recorded count == attested count.
         $foundCount = \count($cycleRun->getFoundDeals());
-        $attestedCount = 0;
-        foreach ($cycleRun->getFoundDeals() as $deal) {
-            if ($deal->hasAmazonAttestation()) {
-                ++$attestedCount;
-            }
-        }
         $this->reportSnapshots($io, $snapshotRows);
 
         $cycleRun->setRawCount($rawCount);
@@ -213,13 +216,12 @@ final class RunCycleCommand extends Command
         $this->entityManager->flush();
 
         $io->success(\sprintf(
-            'Cycle complete: %d page(s) searched — %d raw, %d surviving, %d snapshotted, %d deals recorded (%d Amazon-attested).',
+            'Cycle complete: %d page(s) searched — %d raw, %d surviving, %d snapshotted, %d Amazon-attested deals recorded.',
             $pagesFetched,
             $rawCount,
             $survivingCount,
             $snapshottedCount,
             $foundCount,
-            $attestedCount,
         ));
 
         return Command::SUCCESS;
@@ -252,10 +254,10 @@ final class RunCycleCommand extends Command
     }
 
     /**
-     * Verbose-only: one row per snapshotted survivor showing the attestation
-     * signals (savingBasis + dealDetails) and whether the Strict dial recorded it.
-     * This is the window into "snapshotted but not attested" the DB no longer
-     * keeps, since unattested snapshots are dropped rather than persisted.
+     * Verbose-only: one row per recorded deal showing the attestation signals
+     * (savingBasis + dealDetails). Only Amazon-attested survivors reach this
+     * table — unattested snapshots are dropped by the gate in the record loop
+     * before a row is built, so they never appear here or in the DB.
      *
      * @param list<array{string, string, string, string, string, string}> $rows
      */
