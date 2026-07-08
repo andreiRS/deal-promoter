@@ -189,6 +189,79 @@ final class AmazonOgImageResolverTest extends TestCase
         self::assertSame(4.0, $captured);
     }
 
+    public function testFallsBackWithReasonHttp503WhenBothAttemptsReturn503(): void
+    {
+        $logger = self::recordingLogger();
+        $mock = new MockHttpClient([
+            new MockResponse('service unavailable', ['http_code' => 503]),
+            new MockResponse('service unavailable', ['http_code' => 503]),
+        ]);
+        $resolver = new AmazonOgImageResolver($mock, $logger);
+
+        self::assertSame(
+            self::FALLBACK,
+            $resolver->resolve('B0BXYZ1234', self::FALLBACK),
+        );
+        self::assertSame(2, $mock->getRequestsCount());
+
+        $warnings = array_values(array_filter($logger->records, static fn (array $r): bool => LogLevel::WARNING === $r['level']));
+        self::assertCount(1, $warnings);
+        self::assertSame('http_503', $warnings[0]['context']['reason'] ?? null);
+        self::assertSame('B0BXYZ1234', $warnings[0]['context']['asin'] ?? null);
+    }
+
+    public function testLogsAWarningWithReasonNoOgImageWhenA200PageHasNoOgImage(): void
+    {
+        $logger = self::recordingLogger();
+        $mock = new MockHttpClient(new MockResponse('<html><head><title>captcha</title></head></html>', ['http_code' => 200]));
+        $resolver = new AmazonOgImageResolver($mock, $logger);
+
+        $resolver->resolve('B0BXYZ1234', self::FALLBACK);
+
+        $warnings = array_values(array_filter($logger->records, static fn (array $r): bool => LogLevel::WARNING === $r['level']));
+        self::assertCount(1, $warnings);
+        self::assertSame('no_og_image', $warnings[0]['context']['reason'] ?? null);
+        self::assertSame('B0BXYZ1234', $warnings[0]['context']['asin'] ?? null);
+    }
+
+    public function testLogsAWarningWithReasonTransportErrorWhenBothAttemptsHitATransportError(): void
+    {
+        $logger = self::recordingLogger();
+        $mock = new MockHttpClient([
+            new MockResponse('', ['error' => 'connection refused']),
+            new MockResponse('', ['error' => 'connection refused again']),
+        ]);
+        $resolver = new AmazonOgImageResolver($mock, $logger);
+
+        $resolver->resolve('B0BXYZ1234', self::FALLBACK);
+
+        $warnings = array_values(array_filter($logger->records, static fn (array $r): bool => LogLevel::WARNING === $r['level']));
+        self::assertCount(1, $warnings);
+        self::assertSame('transport_error', $warnings[0]['context']['reason'] ?? null);
+        self::assertSame('B0BXYZ1234', $warnings[0]['context']['asin'] ?? null);
+    }
+
+    public function testLogsOnlyAnInfoRecordWhenATransientFailureIsRetriedAndSucceeds(): void
+    {
+        $html = file_get_contents(__DIR__.'/../fixtures/amazon/product-head.html');
+        self::assertIsString($html);
+
+        $logger = self::recordingLogger();
+        $mock = new MockHttpClient([
+            new MockResponse('service unavailable', ['http_code' => 503]),
+            new MockResponse($html, ['http_code' => 200]),
+        ]);
+        $resolver = new AmazonOgImageResolver($mock, $logger);
+
+        $resolver->resolve('B0BXYZ1234', self::FALLBACK);
+
+        $infos = array_values(array_filter($logger->records, static fn (array $r): bool => LogLevel::INFO === $r['level']));
+        $warnings = array_values(array_filter($logger->records, static fn (array $r): bool => LogLevel::WARNING === $r['level']));
+        self::assertCount(1, $infos);
+        self::assertCount(0, $warnings);
+        self::assertSame('B0BXYZ1234', $infos[0]['context']['asin'] ?? null);
+    }
+
     /**
      * A minimal in-memory PSR-3 logger that keeps every record for inspection.
      *
