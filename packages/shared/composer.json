@@ -5,6 +5,7 @@
     "license": "proprietary",
     "require": {
         "php": ">=8.4",
+        "psr/log": "^3.0",
         "symfony/http-client": "^8.0"
     },
     "autoload": {
