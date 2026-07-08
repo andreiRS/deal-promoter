@@ -33,7 +33,10 @@ final class AmazonOgImageResolver implements OgImageResolver
     // One request plus, for a transient failure only, one immediate retry.
     private const int MAX_ATTEMPTS = 2;
 
-    // Keep a hung Amazon response from stalling publish (seconds).
+    // Keep a hung Amazon response from stalling publish (seconds). `timeout` is
+    // the idle timeout (fires after this many seconds of socket silence);
+    // `max_duration` caps total wall-clock per attempt so a slow trickle can't
+    // stall the synchronous publish loop indefinitely. Same 4.0s for both.
     private const float REQUEST_TIMEOUT = 4.0;
 
     private readonly LoggerInterface $logger;
@@ -56,6 +59,7 @@ final class AmazonOgImageResolver implements OgImageResolver
                 $response = $this->http->request('GET', self::PRODUCT_URL.$asin, [
                     'headers' => ['User-Agent' => self::USER_AGENT],
                     'timeout' => self::REQUEST_TIMEOUT,
+                    'max_duration' => self::REQUEST_TIMEOUT,
                 ]);
                 $status = $response->getStatusCode();
                 $html = ($status >= 200 && $status < 300) ? $response->getContent() : '';

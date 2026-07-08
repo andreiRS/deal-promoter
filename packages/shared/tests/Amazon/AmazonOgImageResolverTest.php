@@ -179,14 +179,15 @@ final class AmazonOgImageResolverTest extends TestCase
 
         $captured = null;
         $mock = new MockHttpClient(static function (string $method, string $url, array $options) use (&$captured, $html): MockResponse {
-            $captured = $options['timeout'] ?? null;
+            $captured = ['timeout' => $options['timeout'] ?? null, 'max_duration' => $options['max_duration'] ?? null];
 
             return new MockResponse($html);
         });
 
         (new AmazonOgImageResolver($mock))->resolve('B0BXYZ1234', self::FALLBACK);
 
-        self::assertSame(4.0, $captured);
+        self::assertSame(4.0, $captured['timeout']);
+        self::assertSame(4.0, $captured['max_duration']);
     }
 
     public function testFallsBackWithReasonHttp503WhenBothAttemptsReturn503(): void
