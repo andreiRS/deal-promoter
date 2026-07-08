@@ -70,6 +70,10 @@ migration: ## Generate a migration from entity changes
 cycle: ## Run one Cycle (override detail with ARGS=-v)
 	$(CONSOLE) app:run-cycle $(ARGS)
 
+.PHONY: clear-published
+clear-published: ## TESTING ONLY: clear all published flags so deals can be re-published
+	$(DC) exec postgres psql -U deal_promoter -d deal_promoter -c "UPDATE found_deal SET publish_requested_at = NULL; TRUNCATE posted_deal;"
+
 .PHONY: open-review
 open-review: ## Open the review page in the browser (http://localhost:8000)
 	@open http://localhost:8000 2>/dev/null || xdg-open http://localhost:8000 2>/dev/null || echo "Review page: http://localhost:8000"
