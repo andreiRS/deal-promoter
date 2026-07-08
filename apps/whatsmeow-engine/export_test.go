@@ -1,6 +1,23 @@
 package engine
 
-import "go.mau.fi/whatsmeow"
+import (
+	"time"
+
+	"go.mau.fi/whatsmeow"
+)
+
+// RetryLoopForTest exposes the pure connect-retry loop so its backoff and
+// retry-until-success behaviour can be unit-tested without a live socket or
+// real-time sleeps.
+func RetryLoopForTest(
+	connect func() error,
+	onAttempt func(),
+	onErr func(error),
+	sleep func(time.Duration),
+	initial, max time.Duration,
+) {
+	retryLoop(connect, onAttempt, onErr, sleep, initial, max)
+}
 
 // SetHeldQRForTest sets or clears the engine's held QR string. It is a test-only
 // seam so QRImage() gating can be driven without faking a live WhatsApp

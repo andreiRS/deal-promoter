@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"time"
 
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/store"
@@ -103,18 +104,65 @@ func NewRealEngine(storePath string) (*RealEngine, error) {
 	client.AddEventHandler(e.onEvent)
 
 	if ShouldConnectOnBoot(device.ID != nil) {
-		e.mu.Lock()
-		e.connecting = true
-		e.mu.Unlock()
-		if err := client.Connect(); err != nil {
-			e.mu.Lock()
-			e.connecting = false
-			e.lastErr = err
-			e.mu.Unlock()
-		}
+		go e.connectWithRetry()
 	}
 
 	return e, nil
+}
+
+// connectWithRetry keeps attempting the initial Connect() until it succeeds.
+// whatsmeow's EnableAutoReconnect only recovers a connection that dropped after
+// being established once; it does NOT retry a failed *initial* Connect(). This
+// closes that gap so the engine self-heals whenever WhatsApp becomes reachable
+// (at boot or after a prolonged outage) instead of sitting FAILED until a
+// manual restart.
+func (e *RealEngine) connectWithRetry() {
+	retryLoop(
+		e.client.Connect,
+		func() {
+			e.mu.Lock()
+			e.connecting = true
+			e.mu.Unlock()
+		},
+		func(err error) {
+			e.mu.Lock()
+			e.lastErr = err
+			e.mu.Unlock()
+		},
+		time.Sleep,
+		time.Second,
+		30*time.Second,
+	)
+}
+
+// retryLoop calls connect() until it returns nil, backing off exponentially
+// between failures (starting at initial, doubling, capped at max). It is a pure
+// helper: onAttempt runs before each connect (to flip the connecting flag),
+// onErr records each failure, and sleep is the delay seam. Extracted from the
+// engine wiring so it can be unit-tested without a live socket or real sleeps.
+func retryLoop(
+	connect func() error,
+	onAttempt func(),
+	onErr func(error),
+	sleep func(time.Duration),
+	initial, max time.Duration,
+) {
+	backoff := initial
+	for {
+		onAttempt()
+		if err := connect(); err == nil {
+			return
+		} else {
+			onErr(err)
+		}
+		sleep(backoff)
+		if backoff < max {
+			backoff *= 2
+			if backoff > max {
+				backoff = max
+			}
+		}
+	}
 }
 
 // onEvent updates the connecting/lastErr bookkeeping from client events so
