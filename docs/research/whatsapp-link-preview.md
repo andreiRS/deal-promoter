@@ -251,3 +251,47 @@ offline pixel proof is sufficient, so I skipped the live publish deliberately.
    `TransformHighResThumbnail` produced the rich thumbnails unchanged.)
 5. **Sanity-check the aspect ratio in a real client** before rollout, since the composited
    image is wide where the plain photo is portrait.
+
+### Risk analysis: the fragile part is Amazon's choice, not the UA (2026-07-08)
+
+This refines point 3 above. On reflection, "must not hardcode one UA / rotate UAs" is the
+wrong emphasis.
+
+**Observed vs. inferred.**
+- Observed: `facebookexternalhit` got 503 + captcha from this dev IP today; `WhatsApp/2.23`
+  got 200 with the composited image.
+- Inferred (not proven): the block is UA-and-IP-reputation based, not permanent. A different
+  UA slipping through on the same IP tells us Amazon isn't blocking the ASIN or the page — it
+  is throttling specific bot signatures from IPs that have been hitting it.
+
+**Why this is the fragile part of the whole approach.** The og:image trick depends entirely
+on Amazon *choosing* to serve us the rich composited image. That decision is Amazon's, keyed
+on UA + IP reputation + request rate — none of which we control. The real risk is not "which
+UA string." It is that our production IP (a server, likely a datacenter IP) looks far more
+bot-like than a random home connection and will be throttled *harder* than what we saw from
+this dev machine. Datacenter IPs are the first ones Amazon rate-limits.
+
+**On UA rotation.** Rotating UAs is a cat-and-mouse game that tends to lose over time and
+edges toward looking like deliberate evasion. Do not build a UA-rotation engine. The durable
+design is:
+
+1. **One honest preview-bot UA** — WhatsApp's own, since we are literally reproducing
+   WhatsApp's card. That is the least likely to be singled out.
+2. **A hard fallback to the plain Keepa photo** on any non-200, captcha, or missing
+   `og:image`. This is the load-bearing safety net, not the UA choice. A deal with a plain
+   photo still posts; a deal that fails to post is the only real failure.
+3. **Cache the scraped og:image URL per ASIN** so we hit Amazon once per deal, not on every
+   retry. Lower request volume is the best defense against being throttled at all.
+
+**The open question to decide before building this for real.** How often will the scrape
+succeed from our actual production IP? We do not know — we only tested from this dev machine.
+If it is blocked most of the time from the datacenter, the feature quietly degrades to "plain
+photo almost always" and buys us little. So the cheap next step is a probe: run the scrape
+from the real production IP a few dozen times over a day and measure the success rate. That
+number decides whether the og:image approach (option 3) is worth it, or whether we should
+composite the badge ourselves (option 1), which has no external dependency and cannot be
+blocked.
+
+**Short version:** the UA is a red herring. The durable design is one honest UA + guaranteed
+fallback + per-ASIN caching, and the thing we actually need to measure is the scrape success
+rate from the production IP before committing.
