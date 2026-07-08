@@ -22,7 +22,7 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
  * 503) is retried exactly once, with no delay; every other failure falls back
  * on the first try. Each outcome is logged with a machine-readable reason.
  */
-final class AmazonOgImageResolver
+final class AmazonOgImageResolver implements OgImageResolver
 {
     private const string PRODUCT_URL = 'https://www.amazon.de/dp/';
 

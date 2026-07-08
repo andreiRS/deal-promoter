@@ -7,6 +7,7 @@ namespace App\Tests\Channel;
 use App\Channel\Exception\PublishFailed;
 use App\Channel\HttpChannelPublisher;
 use App\Entity\PostedDeal;
+use DealPromoter\Shared\Amazon\OgImageResolver;
 use DealPromoter\Shared\Channel\PublishableDeal;
 use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\TestCase;
@@ -26,6 +27,8 @@ use Symfony\Component\HttpClient\Response\MockResponse;
  *  5. Null snapshotPriceCents → throws PublishFailed BEFORE any HTTP call; nothing persisted.
  *  6. Message body is the exact German-formatted string sent as `text`, with
  *     `chatId` set to the configured channel and the X-Internal-Key header present.
+ *  7. preview.image is the URL returned by the og:image resolver, which is called
+ *     with the deal's ASIN and its Keepa image URL (or '' when that is null).
  */
 final class HttpChannelPublisherTest extends TestCase
 {
@@ -191,6 +194,69 @@ final class HttpChannelPublisherTest extends TestCase
         $this->assertMessageShape('1.299,00 €', 'https://www.amazon.de/dp/B000THOU01?tag=t-21', $decoded['text']);
     }
 
+    public function testPreviewImageIsTheResolvedOgImage(): void
+    {
+        // AC1: preview.image carries whatever the og:image resolver returns.
+        $captured = [];
+        $http = new MockHttpClient(static function (string $method, string $url, array $options) use (&$captured): MockResponse {
+            $captured['body'] = $options['body'] ?? null;
+
+            return new MockResponse('{"ok":true}', ['http_code' => 200]);
+        });
+
+        $resolver = new RecordingOgImageResolver('https://m.media-amazon.com/images/og/B000OG0001-composited.png');
+        $em = $this->createMock(EntityManagerInterface::class);
+        $publisher = $this->publisher($http, $em, $resolver);
+        $publisher->publish($this->fakeDeal(
+            'B000OG0001',
+            1299,
+            'https://www.amazon.de/dp/B000OG0001?tag=t-21',
+            'Cool Gadget',
+            'https://images.amazon.com/keepa-photo.jpg',
+        ));
+
+        /** @var array{preview: array{image: string}} $decoded */
+        $decoded = json_decode((string) $captured['body'], true, 512, \JSON_THROW_ON_ERROR);
+        self::assertSame('https://m.media-amazon.com/images/og/B000OG0001-composited.png', $decoded['preview']['image']);
+    }
+
+    public function testResolverReceivesAsinAndKeepaImageAsFallback(): void
+    {
+        // AC2: the resolver is called with the deal's ASIN and its Keepa image URL.
+        $http = new MockHttpClient(new MockResponse('{"ok":true}', ['http_code' => 200]));
+        $resolver = new RecordingOgImageResolver('https://m.media-amazon.com/images/og/composited.png');
+        $em = $this->createMock(EntityManagerInterface::class);
+
+        $this->publisher($http, $em, $resolver)->publish($this->fakeDeal(
+            'B000ASIN01',
+            1299,
+            'https://www.amazon.de/dp/B000ASIN01?tag=t-21',
+            'Cool Gadget',
+            'https://images.amazon.com/keepa-photo.jpg',
+        ));
+
+        self::assertSame('B000ASIN01', $resolver->asin);
+        self::assertSame('https://images.amazon.com/keepa-photo.jpg', $resolver->fallbackUrl);
+    }
+
+    public function testResolverFallbackIsEmptyStringWhenImageUrlIsNull(): void
+    {
+        // AC3: a null Keepa image becomes '' as the resolver's fallback argument.
+        $http = new MockHttpClient(new MockResponse('{"ok":true}', ['http_code' => 200]));
+        $resolver = new RecordingOgImageResolver('https://m.media-amazon.com/images/og/composited.png');
+        $em = $this->createMock(EntityManagerInterface::class);
+
+        $this->publisher($http, $em, $resolver)->publish($this->fakeDeal(
+            'B000NOIMG1',
+            1299,
+            'https://www.amazon.de/dp/B000NOIMG1?tag=t-21',
+            'Cool Gadget',
+            null,
+        ));
+
+        self::assertSame('', $resolver->fallbackUrl);
+    }
+
     /**
      * Assert the message is exactly "{price} € {emoji}\n{url}" where the emoji is
      * one of the sale set. Title is no longer included.
@@ -208,9 +274,19 @@ final class HttpChannelPublisherTest extends TestCase
         self::assertContains($emoji, HttpChannelPublisher::SALE_EMOJIS);
     }
 
-    private function publisher(MockHttpClient $http, EntityManagerInterface $em): HttpChannelPublisher
-    {
-        return new HttpChannelPublisher($http, $em, self::SERVICE_URL, self::CHANNEL_ID, self::INTERNAL_KEY);
+    private function publisher(
+        MockHttpClient $http,
+        EntityManagerInterface $em,
+        ?OgImageResolver $resolver = null,
+    ): HttpChannelPublisher {
+        return new HttpChannelPublisher(
+            $http,
+            $em,
+            self::SERVICE_URL,
+            self::CHANNEL_ID,
+            self::INTERNAL_KEY,
+            $resolver ?? new RecordingOgImageResolver(),
+        );
     }
 
     /**
@@ -273,5 +349,29 @@ final class HttpChannelPublisherTest extends TestCase
                 return $this->imageUrl;
             }
         };
+    }
+}
+
+/**
+ * Test double for the og:image seam: returns a fixed URL (or the fallback when
+ * none is configured) and records the arguments it was called with, so tests can
+ * assert both what the publisher sends and what it forwards to the resolver.
+ */
+final class RecordingOgImageResolver implements OgImageResolver
+{
+    public ?string $asin = null;
+
+    public ?string $fallbackUrl = null;
+
+    public function __construct(private readonly ?string $return = null)
+    {
+    }
+
+    public function resolve(string $asin, string $fallbackUrl): string
+    {
+        $this->asin = $asin;
+        $this->fallbackUrl = $fallbackUrl;
+
+        return $this->return ?? $fallbackUrl;
     }
 }

@@ -6,6 +6,7 @@ namespace App\Channel;
 
 use App\Channel\Exception\PublishFailed;
 use App\Entity\PostedDeal;
+use DealPromoter\Shared\Amazon\OgImageResolver;
 use DealPromoter\Shared\Channel\ChannelPublisher;
 use DealPromoter\Shared\Channel\PublishableDeal;
 use Doctrine\ORM\EntityManagerInterface;
@@ -24,6 +25,10 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
  * Contract with the gateway (POST /send): JSON {chatId, text}; 2xx {ok:true,...}
  * on success, 401/400/502 otherwise. On a 2xx response a posted_deal row is
  * written; on any failure nothing is persisted and a PublishFailed is thrown.
+ *
+ * The preview image is resolved via the {@see OgImageResolver} seam: it returns
+ * Amazon's composited og:image (deal badge + stars) when reachable and falls
+ * back to the deal's plain Keepa photo otherwise. The resolver never throws.
  */
 final readonly class HttpChannelPublisher implements ChannelPublisher
 {
@@ -47,6 +52,7 @@ final readonly class HttpChannelPublisher implements ChannelPublisher
         private string $serviceUrl,
         private string $channelId,
         private string $internalKey,
+        private OgImageResolver $ogImageResolver,
     ) {
     }
 
@@ -75,7 +81,7 @@ final readonly class HttpChannelPublisher implements ChannelPublisher
                     'preview' => [
                         'url' => $affiliateUrl,
                         'title' => $deal->getTitle(),
-                        'image' => (string) ($deal->getImageUrl() ?? ''),
+                        'image' => $this->ogImageResolver->resolve($deal->getAsin(), (string) ($deal->getImageUrl() ?? '')),
                         'highRes' => self::HIGH_RES_PREVIEW,
                     ],
                 ],
