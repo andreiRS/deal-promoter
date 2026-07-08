@@ -93,9 +93,17 @@ services:
         arguments:
             $pagesPerCycle: 2 # number of /deal pages fetched per cycle
 
+    # --- Amazon og:image preview ---
+    # Resolves the WhatsApp preview image: Amazon's composited og:image when
+    # reachable, the deal's Keepa photo as fallback. Lives in packages/shared
+    # (not autowired by the App\ glob), so register it explicitly and bind the
+    # seam the publisher depends on to it.
+    DealPromoter\Shared\Amazon\AmazonOgImageResolver: ~        # autowires HttpClientInterface + LoggerInterface
+    DealPromoter\Shared\Amazon\OgImageResolver: '@DealPromoter\Shared\Amazon\AmazonOgImageResolver'
+
     # --- Publish channel seam (P9 / slice 5) ---
     # HttpChannelPublisher delivers to the slice-4 gateway over HTTP.
-    # HttpClient + EntityManager autowire; the three strings come from env.
+    # HttpClient + EntityManager + OgImageResolver autowire; the three strings come from env.
     App\Channel\HttpChannelPublisher:
         arguments:
             $serviceUrl: '%env(WHATSAPP_SERVICE_URL)%'
